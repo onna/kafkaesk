@@ -90,9 +90,10 @@ kafkaesk mymodule:app --kafka-servers=localhost:9092
 ```
 
 Options:
- --kafka-servers: comma separated list of kafka servers
- --kafka-settings: json encoded options to be passed to https://aiokafka.readthedocs.io/en/stable/api.html#aiokafkaconsumer-class
- --topic-prefix: prefix to use for topics
+
+ - --kafka-servers: comma separated list of kafka servers
+ - --kafka-settings: json encoded options to be passed to https://aiokafka.readthedocs.io/en/stable/api.html#aiokafkaconsumer-class
+ - --topic-prefix: prefix to use for topics
 
 
 ## Application.publish
@@ -105,7 +106,6 @@ Options:
 
 - stream_id: str: fnmatch pattern of streams to subscribe to
 - group: Optional[str]: consumer group id to use. Will use name of function if not provided
-- min_partitions: Optional[int]: min number of partitions(default 1)
 - max_partitions: Optional[int]: max number of partitions(default 40)
 - max_concurrency: Optional[int]: max number of concurrent consumers instances(default 3)
 
@@ -117,6 +117,12 @@ Options:
 - streams: Optional[List[str]]: if streams are known ahead of time, we can pre-create them before we push data
 - retention: Optional[int]: retention policy in seconds
 
+
+## Application.configure
+
+- kafka_servers: Optional[List[str]]: kafka servers to connect to
+- topic_prefix: Optional[str]: topic name prefix to subscribe to
+- kafka_settings: Optional[Dict[str, Any]]: additional aiokafka settings to pass in
 
 ## Dev
 
