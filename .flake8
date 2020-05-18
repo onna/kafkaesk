@@ -1,0 +1,7 @@
+[flake8]
+no-accept-encodings = True
+max-line-length = 100
+ignore =
+  E203
+  W503
+  E231

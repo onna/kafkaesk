@@ -1,0 +1,6 @@
+class NodeNotReadyError:
+    ...
+
+
+class RequestTimedOutError:
+    ...
