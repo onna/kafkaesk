@@ -38,7 +38,7 @@ class KafkaTopicManager:
         self,
         topic: str,
         *,
-        partitions: int = -1,
+        partitions: int = 7,
         replicas: int = 1,
         retention_ms: Optional[int] = None,
         cleanup_policy: Optional[str] = None,

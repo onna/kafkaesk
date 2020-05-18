@@ -27,8 +27,8 @@ jobs:
         run: |
           poetry run flake8 kafkaesk --config=.flake8
           poetry run mypy kafkaesk/
-          isort -c -rc kafkaesk/
-          black --check --verbose kafkaesk
+          poetry run isort -c -rc kafkaesk/
+          poetry run black --check --verbose kafkaesk
   # Job to run tests
   tests:
     runs-on: ubuntu-latest
