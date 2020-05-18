@@ -1,13 +1,19 @@
-import asyncio
-from aiokafka.structs import TopicPartition
 from .exceptions import SchemaRegistrationConflictException
-import orjson
-from typing import Dict, Any, List, TYPE_CHECKING, Optional, Tuple
-from aiokafka import AIOKafkaProducer
 from .kafka import KafkaTopicManager
+from .utils import deep_compare
+from .utils import run_async
+from aiokafka import AIOKafkaProducer
+from aiokafka.structs import TopicPartition
 from kafka import KafkaConsumer
-from .utils import run_async, deep_compare
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
+from typing import TYPE_CHECKING
 
+import asyncio
+import orjson
 
 if TYPE_CHECKING:
     from .app import SchemaRegistration
@@ -23,7 +29,7 @@ def _get_schema(
     we need to use the sync variant
     """
     consumer = KafkaConsumer(
-        bootstrap_servers=kafka_servers, enable_auto_commit=False, group_id="default",
+        bootstrap_servers=kafka_servers, enable_auto_commit=False, group_id="default"
     )
     part = TopicPartition(topic_id, 0)
     consumer.assign([part])
@@ -47,7 +53,7 @@ def _get_schema(
 class SchemaManager:
     def __init__(self, kafka_servers: List[str], topic_prefix: str = ""):
         self._kafka_servers = kafka_servers
-        self._producer = None
+        self._producer: Optional[AIOKafkaProducer] = None
         self._topic_manager = KafkaTopicManager(kafka_servers, prefix=topic_prefix)
         self._topic_prefix = topic_prefix
         self._cached_schemas: Dict[Tuple[str, int], Dict[str, Any]] = {}
@@ -82,16 +88,12 @@ class SchemaManager:
             self._cached_schemas[key] = result
         return result
 
-    async def set_schema(
-        self, schema_id: str, schema_version: int, schema: Dict[str, Any]
-    ) -> None:
+    async def set_schema(self, schema_id: str, schema_version: int, schema: Dict[str, Any]) -> None:
         producer = await self._get_producer()
         topic_id = self._topic_manager.get_schema_topic_id(schema_id)
         await (
             await producer.send(
-                topic_id,
-                key=str(schema_version).encode("ascii"),
-                value=orjson.dumps(schema),
+                topic_id, key=str(schema_version).encode("ascii"), value=orjson.dumps(schema)
             )
         )
 
@@ -103,15 +105,11 @@ class SchemaManager:
             await self._producer.start()
         return self._producer
 
-    async def register(self, registration) -> None:
+    async def register(self, registration: SchemaRegistration) -> None:
         topic_id = self._topic_manager.get_schema_topic_id(registration.id)
         if not await self._topic_manager.topic_exists(topic_id):
             await self._topic_manager.create_topic(
-                topic_id,
-                partitions=1,
-                replicas=1,
-                retention_ms=None,
-                cleanup_policy="compact",
+                topic_id, partitions=1, replicas=1, retention_ms=None, cleanup_policy="compact"
             )
             existing = None
         else:
@@ -119,12 +117,8 @@ class SchemaManager:
 
         if existing is not None:
             # check if conflicts... NEEDS SMARTS HERE
-            if not deep_compare(
-                existing["properties"], registration.model.schema()["properties"]
-            ):
-                raise SchemaRegistrationConflictException(
-                    existing, registration.model.schema()
-                )
+            if not deep_compare(existing["properties"], registration.model.schema()["properties"]):
+                raise SchemaRegistrationConflictException(existing, registration.model.schema())
         else:
             await self.set_schema(
                 registration.id, registration.version, registration.model.schema()

@@ -16,14 +16,42 @@ pytest = "^5.2"
 pytest-docker-fixtures = "^1.3.7"
 pytest-asyncio = "^0.12.0"
 mypy = "0.770"
+flake8 = "^3.8.1"
+isort = "^4.3.21"
+black = "^19.10b0"
 
 [tool.poetry.scripts]
 kafkaesk = 'kafkaesk.app:run'
+
+
+[tool.poetry.urls]
+"GitHub" = "https://github.com/onna/kafkaesk"
 
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
 
 
-[tool.poetry.urls]
-"GitHub" = "https://github.com/onna/kafkaesk"
+[tool.black]
+line-length = 100
+target-version = ['py37']
+include = '\.pyi?$'
+exclude = '''
+
+(
+  /(
+      \.eggs         # exclude a few common directories in the
+    | \.git          # root of the project
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+  )/
+  | foo.py           # also separately exclude a file named foo.py in
+                     # the root of the project
+)
+'''

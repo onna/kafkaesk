@@ -1,8 +1,11 @@
-from kafka.admin.client import KafkaAdminClient
 from kafka import KafkaClient
-from kafkaesk.utils import run_async
 from kafka.admin import NewTopic
-from typing import List, Optional, Dict, Any
+from kafka.admin.client import KafkaAdminClient
+from kafkaesk.utils import run_async
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 
 class KafkaTopicManager:
@@ -34,7 +37,8 @@ class KafkaTopicManager:
     async def create_topic(
         self,
         topic: str,
-        partitions: int = 1,
+        *,
+        partitions: int = -1,
         replicas: int = 1,
         retention_ms: Optional[int] = None,
         cleanup_policy: Optional[str] = None,
@@ -46,7 +50,7 @@ class KafkaTopicManager:
             topic_configs["cleanup.policy"] = cleanup_policy
         new_topic = NewTopic(topic, partitions, replicas, topic_configs=topic_configs)
         client = await self.get_admin_client()
-        client.create_topics([new_topic])
+        await run_async(client.create_topics, [new_topic])
         if self._client is not None:
             self._client.topic_partitions[topic] = [i for i in range(partitions)]
         return None

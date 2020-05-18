@@ -1,12 +1,17 @@
-from typing import Callable, Any
-import asyncio
+from concurrent.futures.thread import ThreadPoolExecutor
 from functools import partial
+from typing import Any
+from typing import Callable
+
+import asyncio
+
+executor = ThreadPoolExecutor(max_workers=30)
 
 
 async def run_async(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     func_to_run = partial(func, *args, **kwargs)
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, func_to_run)
+    return await loop.run_in_executor(executor, func_to_run)
 
 
 def deep_compare(d1: Any, d2: Any) -> bool:

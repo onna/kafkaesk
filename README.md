@@ -105,8 +105,9 @@ Options:
 
 - stream_id: str: fnmatch pattern of streams to subscribe to
 - group: Optional[str]: consumer group id to use. Will use name of function if not provided
-- max_partitions: Optional[int]: max number of 
-- max_concurrency: Optional[int]: max number of 
+- min_partitions: Optional[int]: min number of partitions(default 1)
+- max_partitions: Optional[int]: max number of partitions(default 40)
+- max_concurrency: Optional[int]: max number of concurrent consumers instances(default 3)
 
 
 ## Application.schema
@@ -143,3 +144,8 @@ KAFKA=localhost:9092 poetry run pytest tests
 - [ ] be able to reject commit/abort message handling
 - [ ] prometheus
 - [ ] automatic "connectors"
+
+
+# Naming things
+
+It's hard and "kafka" is already a fun name. Hopefully this library isn't literally "kafkaesque" for you.

@@ -1,6 +1,7 @@
-from typing import TYPE_CHECKING
-
 from pydantic import BaseModel
+from typing import Any
+from typing import Dict
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .app import SchemaRegistration
@@ -36,7 +37,7 @@ Model: {self.model}
 
 
 class SchemaRegistrationConflictException(Exception):
-    def __init__(self, registered: SchemaRegistration, updated: SchemaRegistration):
+    def __init__(self, registered: Dict[str, Any], updated: Dict[str, Any]):
         self.registered = registered
         self.updated = updated
 

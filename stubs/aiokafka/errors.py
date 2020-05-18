@@ -1,6 +1,10 @@
-class NodeNotReadyError:
+class NodeNotReadyError(Exception):
     ...
 
 
-class RequestTimedOutError:
+class RequestTimedOutError(Exception):
+    ...
+
+
+class IllegalStateError(Exception):
     ...
