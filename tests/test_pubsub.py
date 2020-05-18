@@ -1,6 +1,6 @@
-import pytest
-import pydantic
 import asyncio
+import pydantic
+import pytest
 
 pytestmark = pytest.mark.asyncio
 
@@ -19,7 +19,7 @@ async def test_consume_message(app):
     async with app:
         await app.publish("foo.bar", Foo(bar="1"))
         await app.flush()
-        await app.consume_for(1, seconds=2)
+        await app.consume_for(1, seconds=5)
 
     assert len(consumed) == 1
 
@@ -36,7 +36,7 @@ async def test_consume_many_messages(app):
         consumed.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(1000, seconds=3))
+        fut = asyncio.create_task(app.consume_for(1000, seconds=5))
         await asyncio.sleep(0.1)
         for idx in range(1000):
             await app.publish("foo.bar", Foo(bar=str(idx)))
@@ -87,7 +87,7 @@ async def test_multiple_subscribers_different_models(app):
         consumed2.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(1, seconds=2))
+        fut = asyncio.create_task(app.consume_for(1, seconds=5))
         await asyncio.sleep(0.2)
 
         await app.publish("foo.bar", Foo1(bar="1"))
