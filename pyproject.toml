@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "kafkaesk"
-version = "0.1.0"
-description = ""
+version = "0.1.1"
+description = "This project is meant to help facilitate easily publishing and subscribing to events with python and Kafka."
 authors = ["vangheem <vangheem@gmail.com>"]
 
 [tool.poetry.dependencies]
@@ -24,3 +24,6 @@ kafkaesk = 'kafkaesk.app:run'
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
 
+
+[tool.poetry.urls]
+"GitHub" = "https://github.com/onna/kafkaesk"
