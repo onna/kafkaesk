@@ -25,7 +25,7 @@ jobs:
           poetry install
       - name: Run pre-checks
         run: |
-          poetry run flake8 kafkaesk --config=setup.cfg
+          poetry run flake8 kafkaesk --config=.flake8
           poetry run mypy kafkaesk/
           isort -c -rc kafkaesk/
           black --check --verbose kafkaesk
