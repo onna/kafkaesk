@@ -79,20 +79,40 @@ def _pydantic_parser(model: Type[BaseModel], v: Dict[str, Any]) -> BaseModel:
 
 
 async def _default_handler(
-    func: Callable[[Dict[str, Any]], Any], parser: Callable, msg: ConsumerRecord
+    parser: Callable, func: Callable[[Dict[str, Any]], Any], msg: ConsumerRecord
 ) -> None:
     payload = orjson.loads(msg.value)
     data = parser(payload["data"])
     await func(data)
 
 
+async def _raw_handler(func: Callable[[Dict[str, Any]], Any], msg: ConsumerRecord) -> None:
+    await func(msg.value)
+
+
+async def _record_handler(func: Callable[[Dict[str, Any]], Any], msg: ConsumerRecord) -> None:
+    await func(msg)
+
+
 class SubscriptionConsumer:
     def __init__(
-        self, app: "Application", subscription: Subscription, handler: Callable = _default_handler
+        self,
+        app: "Application",
+        subscription: Subscription,
+        event_handlers: Optional[Dict[str, List[Callable]]],
     ):
         self._app = app
         self._subscription = subscription
-        self._handler = handler
+        self._event_handlers = event_handlers or {}
+
+    async def emit(self, name: str, *args: Any, **kwargs: Any) -> None:
+        for func in self._event_handlers.get(name, []):
+            try:
+                await func(*args, **kwargs)
+            except StopConsumer:
+                raise
+            except Exception:
+                logger.warning(f"Error emitting event: {name}: {func}")
 
     async def __call__(self) -> None:
         consumer = AIOKafkaConsumer(
@@ -106,30 +126,41 @@ class SubscriptionConsumer:
         consumer.subscribe(pattern=pattern, listener=listener)
         await consumer.start()
 
-        parser = _default_parser
+        handler = partial(_default_handler, _default_parser)  # type: ignore
         sig = inspect.signature(self._subscription.func)
         if "data" in sig.parameters:
             annotation = sig.parameters["data"].annotation
             if annotation:
-                parser = partial(_pydantic_parser, annotation)  # type: ignore
+                if annotation == bytes:
+                    handler = _raw_handler
+                elif annotation == ConsumerRecord:
+                    handler = _record_handler
+                else:
+                    handler = partial(
+                        _default_handler, partial(_pydantic_parser, annotation)
+                    )  # type: ignore
 
+        await self.emit("started", subscription_consumer=self)
         try:
             # Consume messages
             async for msg in consumer:
                 try:
-                    await self._handler(self._subscription.func, parser, msg)
+                    await handler(self._subscription.func, msg)
+                    await self.emit("message", msg=msg)
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {msg}", exc_info=True)
-                except StopConsumer:
-                    return
-        except (RuntimeError, asyncio.CancelledError):
+        except (RuntimeError, asyncio.CancelledError, StopConsumer):
             ...
         finally:
             try:
+                await consumer.commit()
+            except Exception:
+                logger.info("Could not commit current offsets", exc_info=True)
+            try:
                 await consumer.stop()
             except Exception:
-                logger.warning("Could not properly stop consumer")
+                logger.warning("Could not properly stop consumer", exc_info=True)
 
 
 class Application:
@@ -322,14 +353,15 @@ class Application:
 
             consumed = 0
 
-            async def _handler(func: Callable, parser: Callable, msg: ConsumerRecord) -> None:
+            async def on_message(msg: ConsumerRecord) -> None:
                 nonlocal consumed
-                await _default_handler(func, parser, msg)
                 consumed += 1
                 if consumed >= num_messages:
                     raise StopConsumer
 
-            consumer = SubscriptionConsumer(self, subscription, _handler)
+            consumer = SubscriptionConsumer(
+                self, subscription, event_handlers={"message": [on_message]}
+            )
             consumers.append(consumer)
 
         try:
