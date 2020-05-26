@@ -99,7 +99,7 @@ class SubscriptionConsumer:
         self,
         app: "Application",
         subscription: Subscription,
-        event_handlers: Optional[Dict[str, List[Callable]]],
+        event_handlers: Optional[Dict[str, List[Callable]]] = None,
     ):
         self._app = app
         self._subscription = subscription
