@@ -1,16 +1,17 @@
-from kafka import KafkaClient
-from kafka.admin import NewTopic
-from kafka.admin.client import KafkaAdminClient
 from kafkaesk.utils import run_async
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
 
+import kafka
+import kafka.admin
+import kafka.admin.client
+
 
 class KafkaTopicManager:
-    _admin_client: Optional[KafkaAdminClient]
-    _client: Optional[KafkaClient]
+    _admin_client: Optional[kafka.admin.client.KafkaAdminClient]
+    _client: Optional[kafka.KafkaClient]
 
     def __init__(self, bootstrap_servers: List[str], prefix: str = ""):
         self.prefix = prefix
@@ -31,16 +32,16 @@ class KafkaTopicManager:
     def get_schema_topic_id(self, schema_name: str) -> str:
         return f"{self.prefix}__schema__{schema_name}"
 
-    async def get_admin_client(self) -> KafkaAdminClient:
+    async def get_admin_client(self) -> kafka.admin.client.KafkaAdminClient:
         if self._admin_client is None:
             self._admin_client = await run_async(
-                KafkaAdminClient, bootstrap_servers=self._bootstrap_servers
+                kafka.admin.client.KafkaAdminClient, bootstrap_servers=self._bootstrap_servers
             )
         return self._admin_client
 
     async def topic_exists(self, topic: str) -> bool:
         if self._client is None:
-            self._client = await run_async(KafkaClient, self._bootstrap_servers)
+            self._client = await run_async(kafka.KafkaClient, self._bootstrap_servers)
         return topic in self._client.topic_partitions
 
     async def create_topic(
@@ -57,7 +58,7 @@ class KafkaTopicManager:
             topic_configs["retention.ms"] = retention_ms
         if cleanup_policy is not None:
             topic_configs["cleanup.policy"] = cleanup_policy
-        new_topic = NewTopic(topic, partitions, replicas, topic_configs=topic_configs)
+        new_topic = kafka.admin.NewTopic(topic, partitions, replicas, topic_configs=topic_configs)
         client = await self.get_admin_client()
         await run_async(client.create_topics, [new_topic])
         if self._client is not None:

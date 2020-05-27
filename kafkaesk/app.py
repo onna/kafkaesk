@@ -4,12 +4,6 @@ from .exceptions import UnhandledMessage
 from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
 from .schema import SchemaManager
-from aiokafka import AIOKafkaConsumer
-from aiokafka import AIOKafkaProducer
-from aiokafka import ConsumerRebalanceListener
-from aiokafka.errors import IllegalStateError
-from aiokafka.structs import ConsumerRecord
-from aiokafka.structs import TopicPartition
 from functools import partial
 from pydantic import BaseModel
 from pydantic import ValidationError
@@ -22,6 +16,9 @@ from typing import List
 from typing import Optional
 from typing import Type
 
+import aiokafka
+import aiokafka.errors
+import aiokafka.structs
 import argparse
 import asyncio
 import fnmatch
@@ -79,18 +76,20 @@ def _pydantic_parser(model: Type[BaseModel], v: Dict[str, Any]) -> BaseModel:
 
 
 async def _default_handler(
-    parser: Callable, func: Callable[[Dict[str, Any]], Any], msg: ConsumerRecord
+    parser: Callable, func: Callable[[Dict[str, Any]], Any], msg: aiokafka.structs.ConsumerRecord
 ) -> None:
     payload = orjson.loads(msg.value)
     data = parser(payload["data"])
     await func(data)
 
 
-async def _raw_handler(func: Callable[[bytes], Any], msg: ConsumerRecord) -> None:
+async def _raw_handler(func: Callable[[bytes], Any], msg: aiokafka.structs.ConsumerRecord) -> None:
     await func(msg.value)
 
 
-async def _record_handler(func: Callable[[ConsumerRecord], Any], msg: ConsumerRecord) -> None:
+async def _record_handler(
+    func: Callable[[aiokafka.structs.ConsumerRecord], Any], msg: aiokafka.structs.ConsumerRecord
+) -> None:
     await func(msg)
 
 
@@ -115,7 +114,7 @@ class SubscriptionConsumer:
                 logger.warning(f"Error emitting event: {name}: {func}")
 
     async def __call__(self) -> None:
-        consumer = AIOKafkaConsumer(
+        consumer = aiokafka.AIOKafkaConsumer(
             bootstrap_servers=cast(List[str], self._app._kafka_servers),
             loop=asyncio.get_event_loop(),
             group_id=self._subscription.group,
@@ -133,7 +132,7 @@ class SubscriptionConsumer:
             if annotation:
                 if annotation == bytes:
                     handler = _raw_handler  # type: ignore
-                elif annotation == ConsumerRecord:
+                elif annotation == aiokafka.structs.ConsumerRecord:
                     handler = _record_handler  # type: ignore
                 else:
                     handler = partial(
@@ -168,7 +167,7 @@ class Application:
     Application configuration
     """
 
-    _producer: Optional[AIOKafkaProducer]
+    _producer: Optional[aiokafka.AIOKafkaProducer]
 
     def __init__(
         self,
@@ -224,7 +223,7 @@ class Application:
 
     async def publish(
         self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
-    ) -> Awaitable[ConsumerRecord]:
+    ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         if not self._intialized:
             async with self.get_lock("_"):
                 await self.initialize()
@@ -301,9 +300,9 @@ class Application:
 
         return inner
 
-    async def _get_producer(self) -> AIOKafkaProducer:
+    async def _get_producer(self) -> aiokafka.AIOKafkaProducer:
         if self._producer is None:
-            self._producer = AIOKafkaProducer(
+            self._producer = aiokafka.AIOKafkaProducer(
                 bootstrap_servers=cast(List[str], self._kafka_servers),
                 loop=asyncio.get_event_loop(),
             )
@@ -362,7 +361,7 @@ class Application:
 
             consumed = 0
 
-            async def on_message(msg: ConsumerRecord) -> None:
+            async def on_message(msg: aiokafka.structs.ConsumerRecord) -> None:
                 nonlocal consumed
                 consumed += 1
                 if consumed >= num_messages:
@@ -405,14 +404,14 @@ class Application:
                     fut.cancel()
 
 
-class CustomConsumerRebalanceListener(ConsumerRebalanceListener):
-    def __init__(self, consumer: AIOKafkaConsumer):
+class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
+    def __init__(self, consumer: aiokafka.AIOKafkaConsumer):
         self.consumer = consumer
 
-    async def on_partitions_revoked(self, revoked: List[TopicPartition]) -> None:
+    async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
         ...
 
-    async def on_partitions_assigned(self, assigned: List[TopicPartition]) -> None:
+    async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition
            re-assignment completes and before the consumer
            starts fetching data again.
@@ -425,7 +424,7 @@ class CustomConsumerRebalanceListener(ConsumerRebalanceListener):
             try:
                 position = await self.consumer.position(tp)
                 offset = position - 1
-            except IllegalStateError:
+            except aiokafka.errors.IllegalStateError:
                 offset = -1
 
             if offset > 0:
