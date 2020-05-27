@@ -17,6 +17,8 @@ from typing import Optional
 from typing import Type
 
 import aiokafka
+import aiokafka.errors
+import aiokafka.structs
 import argparse
 import asyncio
 import fnmatch
@@ -422,7 +424,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
             try:
                 position = await self.consumer.position(tp)
                 offset = position - 1
-            except aiokafka.IllegalStateError:
+            except aiokafka.errors.IllegalStateError:
                 offset = -1
 
             if offset > 0:

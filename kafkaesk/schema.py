@@ -10,6 +10,7 @@ from typing import Tuple
 from typing import TYPE_CHECKING
 
 import aiokafka
+import aiokafka.structs
 import asyncio
 import kafka
 import orjson

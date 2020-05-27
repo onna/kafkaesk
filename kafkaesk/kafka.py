@@ -5,6 +5,8 @@ from typing import List
 from typing import Optional
 
 import kafka
+import kafka.admin
+import kafka.admin.client
 
 
 class KafkaTopicManager:
