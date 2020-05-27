@@ -1,6 +1,7 @@
-from typing import Dict, List, Optional
-
 from kafka.structs import TopicPartition
+from typing import Dict
+from typing import List
+from typing import Optional
 
 
 class KafkaConsumer:
@@ -24,3 +25,6 @@ class KafkaConsumer:
 
 class KafkaClient:
     topic_partitions: Dict[str, List[int]]
+
+    def close(self) -> None:
+        ...

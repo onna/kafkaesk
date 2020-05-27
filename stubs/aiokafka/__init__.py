@@ -54,6 +54,9 @@ class AIOKafkaConsumer:
     async def stop(self) -> None:
         ...
 
+    async def commit(self) -> None:
+        ...
+
     def __aiter__(self) -> AsyncIterator[ConsumerRecord]:
         ...
 

@@ -1,3 +1,5 @@
+from aiokafka import ConsumerRecord
+
 import asyncio
 import pydantic
 import pytest
@@ -99,3 +101,33 @@ async def test_multiple_subscribers_different_models(app):
     assert len(consumed2) == 1
     assert isinstance(consumed1[0], Foo1)
     assert isinstance(consumed2[0], Foo2)
+
+
+async def test_subscribe_diff_data_types(app):
+    consumed_records = []
+    consumed_bytes = []
+
+    @app.schema("Foo", version=1, streams=["foo.bar"])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar")
+    async def consume_record(data: ConsumerRecord):
+        consumed_records.append(data)
+
+    @app.subscribe("foo.bar")
+    async def consume_bytes(data: bytes):
+        consumed_bytes.append(data)
+
+    async with app:
+        fut = asyncio.create_task(app.consume_for(1, seconds=5))
+        await asyncio.sleep(0.2)
+
+        await app.publish("foo.bar", Foo(bar="1"))
+        await app.flush()
+        await fut
+
+    assert len(consumed_records) == 1
+    assert len(consumed_bytes) == 1
+    assert isinstance(consumed_records[0], ConsumerRecord)
+    assert isinstance(consumed_bytes[0], bytes)
