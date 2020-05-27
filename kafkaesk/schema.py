@@ -70,6 +70,7 @@ class SchemaManager:
 
     async def finalize(self) -> None:
         if self._producer is not None:
+            await self._producer.flush()
             await self._producer.stop()
             self._producer = None
         await self._topic_manager.finalize()
