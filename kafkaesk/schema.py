@@ -2,9 +2,6 @@ from .exceptions import SchemaRegistrationConflictException
 from .kafka import KafkaTopicManager
 from .utils import deep_compare
 from .utils import run_async
-from aiokafka import AIOKafkaProducer
-from aiokafka.structs import TopicPartition
-from kafka import KafkaConsumer
 from typing import Any
 from typing import Dict
 from typing import List
@@ -12,7 +9,9 @@ from typing import Optional
 from typing import Tuple
 from typing import TYPE_CHECKING
 
+import aiokafka
 import asyncio
+import kafka
 import orjson
 
 if TYPE_CHECKING:
@@ -28,10 +27,10 @@ def _get_schema(
     The async driver kind of sucks so for some more custom things
     we need to use the sync variant
     """
-    consumer = KafkaConsumer(
+    consumer = kafka.KafkaConsumer(
         bootstrap_servers=kafka_servers, enable_auto_commit=False, group_id="default"
     )
-    part = TopicPartition(topic_id, 0)
+    part = aiokafka.structs.TopicPartition(topic_id, 0)
     consumer.assign([part])
     consumer.seek_to_beginning(part)
     end_offset = consumer.end_offsets([part])[part]
@@ -53,7 +52,7 @@ def _get_schema(
 class SchemaManager:
     def __init__(self, kafka_servers: List[str], topic_prefix: str = ""):
         self._kafka_servers = kafka_servers
-        self._producer: Optional[AIOKafkaProducer] = None
+        self._producer: Optional[aiokafka.AIOKafkaProducer] = None
         self._topic_manager = KafkaTopicManager(kafka_servers, prefix=topic_prefix)
         self._topic_prefix = topic_prefix
         self._cached_schemas: Dict[Tuple[str, int], Dict[str, Any]] = {}
@@ -99,9 +98,9 @@ class SchemaManager:
             )
         )
 
-    async def _get_producer(self) -> AIOKafkaProducer:
+    async def _get_producer(self) -> aiokafka.AIOKafkaProducer:
         if self._producer is None:
-            self._producer = AIOKafkaProducer(
+            self._producer = aiokafka.AIOKafkaProducer(
                 bootstrap_servers=self._kafka_servers, loop=asyncio.get_event_loop()
             )
             await self._producer.start()
