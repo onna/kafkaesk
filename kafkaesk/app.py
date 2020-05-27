@@ -338,6 +338,9 @@ class Application:
             await self._producer.stop()
         await self.schema_mng.finalize()
 
+        if self._topic_mng is not None:
+            await self._topic_mng.finalize()
+
         self._producer = None
         self._intialized = False
         self._topic_mng = None

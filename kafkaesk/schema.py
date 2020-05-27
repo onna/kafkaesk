@@ -72,6 +72,7 @@ class SchemaManager:
         if self._producer is not None:
             await self._producer.stop()
             self._producer = None
+        await self._topic_manager.finalize()
 
     async def get_schema(self, schema_id: str, schema_version: int) -> Dict[str, Any]:
         key = (schema_id, schema_version)

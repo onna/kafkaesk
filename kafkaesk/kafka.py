@@ -9,12 +9,21 @@ from typing import Optional
 
 
 class KafkaTopicManager:
-    _admin_client: KafkaAdminClient
-    _client: KafkaClient
+    _admin_client: Optional[KafkaAdminClient]
+    _client: Optional[KafkaClient]
 
     def __init__(self, bootstrap_servers: List[str], prefix: str = ""):
         self.prefix = prefix
         self._bootstrap_servers = bootstrap_servers
+        self._admin_client = self._client = None
+
+    async def finalize(self):
+        if self._admin_client is not None:
+            await run_async(self._admin_client.close)
+            self._admin_client = None
+        if self._client is not None:
+            await run_async(self._client.close)
+            self._client = None
 
     def get_topic_id(self, topic: str) -> str:
         return f"{self.prefix}{topic}"
@@ -23,14 +32,14 @@ class KafkaTopicManager:
         return f"{self.prefix}__schema__{schema_name}"
 
     async def get_admin_client(self) -> KafkaAdminClient:
-        if not hasattr(self, "_admin_client"):
+        if self._admin_client is None:
             self._admin_client = await run_async(
                 KafkaAdminClient, bootstrap_servers=self._bootstrap_servers
             )
         return self._admin_client
 
     async def topic_exists(self, topic: str) -> bool:
-        if not hasattr(self, "_client"):
+        if self._admin_client is None:
             self._client = await run_async(KafkaClient, self._bootstrap_servers)
         return topic in self._client.topic_partitions
 
