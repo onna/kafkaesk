@@ -337,6 +337,12 @@ class Application:
             await self._producer.flush()
             await self._producer.stop()
         await self.schema_mng.finalize()
+
+        self._producer = None
+        self._intialized = False
+        self._topic_mng = None
+        self._schema_mng = None
+
         self._intialized = False
 
     async def __aenter__(self) -> "Application":
