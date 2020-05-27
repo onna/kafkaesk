@@ -86,11 +86,11 @@ async def _default_handler(
     await func(data)
 
 
-async def _raw_handler(func: Callable[[Dict[str, Any]], Any], msg: ConsumerRecord) -> None:
+async def _raw_handler(func: Callable[[bytes], Any], msg: ConsumerRecord) -> None:
     await func(msg.value)
 
 
-async def _record_handler(func: Callable[[Dict[str, Any]], Any], msg: ConsumerRecord) -> None:
+async def _record_handler(func: Callable[[ConsumerRecord], Any], msg: ConsumerRecord) -> None:
     await func(msg)
 
 
@@ -132,9 +132,9 @@ class SubscriptionConsumer:
             annotation = sig.parameters["data"].annotation
             if annotation:
                 if annotation == bytes:
-                    handler = _raw_handler
+                    handler = _raw_handler  # type: ignore
                 elif annotation == ConsumerRecord:
-                    handler = _record_handler
+                    handler = _record_handler  # type: ignore
                 else:
                     handler = partial(
                         _default_handler, partial(_pydantic_parser, annotation)

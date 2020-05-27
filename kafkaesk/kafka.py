@@ -17,7 +17,7 @@ class KafkaTopicManager:
         self._bootstrap_servers = bootstrap_servers
         self._admin_client = self._client = None
 
-    async def finalize(self):
+    async def finalize(self) -> None:
         if self._admin_client is not None:
             await run_async(self._admin_client.close)
             self._admin_client = None
@@ -39,7 +39,7 @@ class KafkaTopicManager:
         return self._admin_client
 
     async def topic_exists(self, topic: str) -> bool:
-        if self._admin_client is None:
+        if self._client is None:
             self._client = await run_async(KafkaClient, self._bootstrap_servers)
         return topic in self._client.topic_partitions
 
