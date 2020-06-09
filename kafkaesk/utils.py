@@ -41,8 +41,8 @@ def resolve_dotted_name(name: str) -> Any:
     """
     import the provided dotted name
 
-    >>> resolve_dotted_name('guillotina.interfaces.IRequest')
-    <InterfaceClass guillotina.interfaces.IRequest>
+    >>> resolve_dotted_name('foo.bar')
+    <object bar>
 
     :param name: dotted name
     """
