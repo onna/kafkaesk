@@ -4,6 +4,7 @@ from .exceptions import UnhandledMessage
 from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
 from .schema import SchemaManager
+from .utils import resolve_dotted_name
 from functools import partial
 from pydantic import BaseModel
 from pydantic import ValidationError
@@ -114,6 +115,13 @@ class SubscriptionConsumer:
                 logger.warning(f"Error emitting event: {name}: {func}")
 
     async def __call__(self) -> None:
+        try:
+            while True:
+                await self.__run()
+        except (RuntimeError, asyncio.CancelledError, StopConsumer):
+            ...
+
+    async def __run(self) -> None:
         consumer = aiokafka.AIOKafkaConsumer(
             bootstrap_servers=cast(List[str], self._app._kafka_servers),
             loop=asyncio.get_event_loop(),
@@ -127,17 +135,17 @@ class SubscriptionConsumer:
 
         handler = partial(_default_handler, _default_parser)  # type: ignore
         sig = inspect.signature(self._subscription.func)
-        if "data" in sig.parameters:
-            annotation = sig.parameters["data"].annotation
-            if annotation:
-                if annotation == bytes:
-                    handler = _raw_handler  # type: ignore
-                elif annotation == aiokafka.structs.ConsumerRecord:
-                    handler = _record_handler  # type: ignore
-                else:
-                    handler = partial(
-                        _default_handler, partial(_pydantic_parser, annotation)
-                    )  # type: ignore
+        param_name = [k for k in sig.parameters.keys()][0]
+        annotation = sig.parameters[param_name].annotation
+        if annotation:
+            if annotation == bytes:
+                handler = _raw_handler  # type: ignore
+            elif annotation == aiokafka.structs.ConsumerRecord:
+                handler = _record_handler  # type: ignore
+            else:
+                handler = partial(
+                    _default_handler, partial(_pydantic_parser, annotation)
+                )  # type: ignore
 
         await self.emit("started", subscription_consumer=self)
         try:
@@ -149,8 +157,6 @@ class SubscriptionConsumer:
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {msg}", exc_info=True)
-        except (RuntimeError, asyncio.CancelledError, StopConsumer):
-            ...
         finally:
             try:
                 await consumer.commit()
@@ -448,7 +454,7 @@ async def __run_app(app: Application) -> None:
 def run() -> None:
     opts = cli_parser.parse_args()
     module_str, attr = opts.app.split(":")
-    module = __import__(module_str)
+    module = resolve_dotted_name(module_str)
     app = getattr(module, attr)
 
     if callable(app):
