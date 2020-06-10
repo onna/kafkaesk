@@ -8,6 +8,7 @@ import kafka
 import kafka.admin
 import kafka.admin.client
 import kafka.errors
+import kafka.structs
 
 
 class KafkaTopicManager:
@@ -40,6 +41,12 @@ class KafkaTopicManager:
                 kafka.admin.client.KafkaAdminClient, bootstrap_servers=self._bootstrap_servers
             )
         return self._admin_client
+
+    async def list_consumer_group_offsets(
+        self, group_id
+    ) -> Dict[kafka.structs.TopicPartition, kafka.structs.OffsetAndMetadata]:
+        client = await self.get_admin_client()
+        return await run_async(client.list_consumer_group_offsets, group_id)
 
     async def topic_exists(self, topic: str) -> bool:
         if self._client is None:

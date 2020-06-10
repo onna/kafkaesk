@@ -24,6 +24,7 @@ import argparse
 import asyncio
 import fnmatch
 import inspect
+import kafka.admin.client
 import logging
 import orjson
 import pydantic
@@ -124,7 +125,10 @@ class SubscriptionConsumer:
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
-        listener = CustomConsumerRebalanceListener(consumer)
+        listener = CustomConsumerRebalanceListener(
+            consumer,
+            await self._app.topic_mng.list_consumer_group_offsets(self._subscription.group),
+        )
         consumer.subscribe(pattern=pattern, listener=listener)
         await consumer.start()
 
@@ -154,11 +158,11 @@ class SubscriptionConsumer:
                         elif key == "record":
                             kwargs["record"] = record
                     await self._subscription.func(**kwargs)
-
-                    await self.emit("message", record=record)
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {record}", exc_info=True)
+                finally:
+                    asyncio.create_task(self.emit("message", record=record))
         finally:
             try:
                 await consumer.commit()
@@ -369,7 +373,7 @@ class Application:
 
             consumed = 0
 
-            async def on_message(msg: aiokafka.structs.ConsumerRecord) -> None:
+            async def on_message(record: aiokafka.structs.ConsumerRecord) -> None:
                 nonlocal consumed
                 consumed += 1
                 if consumed >= num_messages:
@@ -413,8 +417,13 @@ class Application:
 
 
 class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
-    def __init__(self, consumer: aiokafka.AIOKafkaConsumer):
+    def __init__(
+        self,
+        consumer: aiokafka.AIOKafkaConsumer,
+        starting_position: Dict[kafka.structs.TopicPartition, kafka.structs.OffsetAndMetadata],
+    ):
         self.consumer = consumer
+        self.starting_position = starting_position
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
         ...
@@ -429,16 +438,23 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
             to a given consumer.
         """
         for tp in assigned:
-            try:
-                position = await self.consumer.position(tp)
-                offset = position - 1
-            except aiokafka.errors.IllegalStateError:
-                offset = -1
-
-            if offset > 0:
-                self.consumer.seek(tp, offset)
-            else:
+            if tp not in self.starting_position:
+                # detect if we've never consumed from this topic before
+                # decision right now is to go back to beginning
+                # unclear if this is right decision
                 await self.consumer.seek_to_beginning(tp)
+
+            # XXX go back one message
+            # unclear if this is what we want to do...
+            # try:
+            #     position = await self.consumer.position(tp)
+            #     offset = position - 1
+            # except aiokafka.errors.IllegalStateError:
+            #     offset = -1
+            # if offset > 0:
+            #     self.consumer.seek(tp, offset)
+            # else:
+            #     await self.consumer.seek_to_beginning(tp)
 
 
 cli_parser = argparse.ArgumentParser(description="Run kafkaesk worker.")
