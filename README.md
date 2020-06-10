@@ -79,6 +79,7 @@ Kafka itself does not enforce these concepts.
 - each topic will have only one schema
 - a single schema can be used for multiple topics
 - consumed message schema validation is up to the consumer
+- messages will be consumed at least once. Considering this, your handling should be idempotent
 
 
 ### schema storage
