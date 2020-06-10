@@ -19,7 +19,7 @@ class KafkaTopicManager:
         self.prefix = prefix
         self._bootstrap_servers = bootstrap_servers
         self._admin_client = self._client = None
-        self._cached: List[str] = []
+        self._topic_cache: List[str] = []
 
     async def finalize(self) -> None:
         if self._admin_client is not None:
@@ -53,10 +53,10 @@ class KafkaTopicManager:
             self._client = await run_async(
                 kafka.KafkaConsumer, bootstrap_servers=self._bootstrap_servers
             )
-        if topic in self._cached:
+        if topic in self._topic_cache:
             return True
         if topic in await run_async(self._client.topics):
-            self._cached.append(topic)
+            self._topic_cache.append(topic)
             return True
         return False
 
@@ -80,5 +80,5 @@ class KafkaTopicManager:
             await run_async(client.create_topics, [new_topic])
         except kafka.errors.TopicAlreadyExistsError:
             pass
-        self._cached.append(topic)
+        self._topic_cache.append(topic)
         return None
