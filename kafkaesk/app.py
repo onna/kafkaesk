@@ -16,7 +16,6 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Type
-from typing import Union
 
 import aiokafka
 import aiokafka.errors
@@ -25,10 +24,10 @@ import argparse
 import asyncio
 import fnmatch
 import inspect
-import kafka.admin.client
 import logging
 import orjson
 import pydantic
+import signal
 
 logger = logging.getLogger("kafkaesk")
 
@@ -462,9 +461,18 @@ cli_parser.add_argument("--kafka-settings", help="Kafka settings")
 cli_parser.add_argument("--topic-prefix", help="Topic prefix")
 
 
+def _close_app(app: Application, fut: asyncio.Future) -> None:
+    if not fut.done():
+        fut.cancel()
+
+
 async def __run_app(app: Application) -> None:
     async with app:
-        await app.consume_forever()
+        loop = asyncio.get_event_loop()
+        fut = asyncio.create_task(app.consume_forever())
+        for signame in {"SIGINT", "SIGTERM"}:
+            loop.add_signal_handler(getattr(signal, signame), partial(_close_app, app, fut))
+        await fut
 
 
 def run() -> None:
@@ -483,4 +491,7 @@ def run() -> None:
     if opts.topic_prefix:
         app.configure(topic_prefix=opts.topic_prefix)
 
-    asyncio.run(__run_app(app))
+    try:
+        asyncio.run(__run_app(app))
+    except asyncio.CancelledError:
+        logger.info("Closing because task was exited")
