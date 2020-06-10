@@ -366,9 +366,9 @@ class Application:
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> None:
         consumers = []
 
-        for subscription in self._subscriptions:
+        consumed = 0
 
-            consumed = 0
+        for subscription in self._subscriptions:
 
             async def on_message(record: aiokafka.structs.ConsumerRecord) -> None:
                 nonlocal consumed
