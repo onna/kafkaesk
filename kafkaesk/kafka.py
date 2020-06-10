@@ -1,3 +1,4 @@
+from aiokafka import TopicPartition
 from kafkaesk.utils import run_async
 from typing import Any
 from typing import Dict
@@ -7,6 +8,8 @@ from typing import Optional
 import kafka
 import kafka.admin
 import kafka.admin.client
+import kafka.errors
+import kafka.structs
 
 
 class KafkaTopicManager:
@@ -17,6 +20,7 @@ class KafkaTopicManager:
         self.prefix = prefix
         self._bootstrap_servers = bootstrap_servers
         self._admin_client = self._client = None
+        self._topic_cache: List[str] = []
 
     async def finalize(self) -> None:
         if self._admin_client is not None:
@@ -39,10 +43,23 @@ class KafkaTopicManager:
             )
         return self._admin_client
 
+    async def list_consumer_group_offsets(
+        self, group_id: str, partitions: Optional[List[TopicPartition]] = None
+    ) -> Dict[kafka.structs.TopicPartition, kafka.structs.OffsetAndMetadata]:
+        client = await self.get_admin_client()
+        return await run_async(client.list_consumer_group_offsets, group_id, partitions=partitions)
+
     async def topic_exists(self, topic: str) -> bool:
         if self._client is None:
-            self._client = await run_async(kafka.KafkaClient, self._bootstrap_servers)
-        return topic in self._client.topic_partitions
+            self._client = await run_async(
+                kafka.KafkaConsumer, bootstrap_servers=self._bootstrap_servers
+            )
+        if topic in self._topic_cache:
+            return True
+        if topic in await run_async(self._client.topics):
+            self._topic_cache.append(topic)
+            return True
+        return False
 
     async def create_topic(
         self,
@@ -60,7 +77,9 @@ class KafkaTopicManager:
             topic_configs["cleanup.policy"] = cleanup_policy
         new_topic = kafka.admin.NewTopic(topic, partitions, replicas, topic_configs=topic_configs)
         client = await self.get_admin_client()
-        await run_async(client.create_topics, [new_topic])
-        if self._client is not None:
-            self._client.topic_partitions[topic] = [i for i in range(partitions)]
+        try:
+            await run_async(client.create_topics, [new_topic])
+        except kafka.errors.TopicAlreadyExistsError:
+            pass
+        self._topic_cache.append(topic)
         return None

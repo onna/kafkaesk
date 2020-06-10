@@ -1,6 +1,12 @@
+import kafkaesk
+import os
 import pytest
 import uuid
-import kafkaesk
+
+
+@pytest.fixture()
+async def kafka():
+    yield os.environ.get("KAFKA", "localhost:9092").split(":")
 
 
 @pytest.fixture()

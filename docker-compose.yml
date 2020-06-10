@@ -1,0 +1,35 @@
+# just for dev, fun, playing around
+version: "3"
+services:
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    ports:
+      - 2181:2181
+    expose:
+      - 2181
+    environment:
+      "ALLOW_ANONYMOUS_LOGIN": "yes"
+    networks:
+      - kafka-network
+
+  kafka:
+    image: bitnami/kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    expose:
+      - 9092
+    links:
+      - zookeeper
+    environment:
+      "ALLOW_PLAINTEXT_LISTENER": "yes"
+      "KAFKA_CFG_ZOOKEEPER_CONNECT": "zookeeper:2181"
+      "KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE": "true"
+      "KAFKA_CFG_ADVERTISED_LISTENERS": "PLAINTEXT://localhost:9092"
+    networks:
+      - kafka-network
+
+networks:
+  kafka-network:
+    driver: bridge

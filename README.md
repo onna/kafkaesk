@@ -56,6 +56,19 @@ async def get_messages(data: ContentMessage):
 ```
 
 
+Optional consumer injected parameters:
+
+- schema: str
+- record: aiokafka.structs.ConsumerRecord
+
+Depending on the type annotation for the first parameter, you will get different data injected:
+
+- `async def get_messages(data: ContentMessage)`: parses pydantic schema
+- `async def get_messages(data: bytes)`: give raw byte data
+- `async def get_messages(record: aiokafka.structs.ConsumerRecord)`: give kafka record object
+- `async def get_messages(data)`: raw json data in message
+
+
 ## kafkaesk contract
 
 This is just a library around using kafka.
@@ -66,6 +79,7 @@ Kafka itself does not enforce these concepts.
 - each topic will have only one schema
 - a single schema can be used for multiple topics
 - consumed message schema validation is up to the consumer
+- messages will be consumed at least once. Considering this, your handling should be idempotent
 
 
 ### schema storage
@@ -133,7 +147,7 @@ poetry install
 Run tests:
 
 ```bash
-docker run -p 2181:2181 -p 9092:9092 --env ADVERTISED_HOST=0.0.0.0 --env ADVERTISED_PORT=9092 spotify/kafka
+docker-compose up
 KAFKA=localhost:9092 poetry run pytest tests
 ```
 

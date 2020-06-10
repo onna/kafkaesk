@@ -11,3 +11,8 @@ class TopicPartition:
 
     def __init__(self, topic: str, partition: int):
         ...
+
+
+class OffsetAndMetadata:
+    offset: int
+    metadata: str

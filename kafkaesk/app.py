@@ -27,6 +27,7 @@ import inspect
 import logging
 import orjson
 import pydantic
+import signal
 
 logger = logging.getLogger("kafkaesk")
 
@@ -64,34 +65,29 @@ class SchemaRegistration:
         return f"<SchemaRegistration id: {self.id}, version: {self.version} >"
 
 
-def _default_parser(v: Dict[str, Any]) -> Dict[str, Any]:
-    return v
-
-
-def _pydantic_parser(model: Type[BaseModel], v: Dict[str, Any]) -> BaseModel:
+def _pydantic_msg_handler(
+    model: Type[BaseModel], record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
+) -> BaseModel:
     try:
-        data = model.parse_obj(v)
+        return model.parse_obj(data["data"])
     except ValidationError:
         raise UnhandledMessage(f"Error parsing data: {model}")
+
+
+def _raw_msg_handler(
+    record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
+) -> Dict[str, Any]:
     return data
 
 
-async def _default_handler(
-    parser: Callable, func: Callable[[Dict[str, Any]], Any], msg: aiokafka.structs.ConsumerRecord
-) -> None:
-    payload = orjson.loads(msg.value)
-    data = parser(payload["data"])
-    await func(data)
+def _bytes_msg_handler(record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]) -> bytes:
+    return record.value
 
 
-async def _raw_handler(func: Callable[[bytes], Any], msg: aiokafka.structs.ConsumerRecord) -> None:
-    await func(msg.value)
-
-
-async def _record_handler(
-    func: Callable[[aiokafka.structs.ConsumerRecord], Any], msg: aiokafka.structs.ConsumerRecord
-) -> None:
-    await func(msg)
+def _record_msg_handler(
+    record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
+) -> aiokafka.structs.ConsumerRecord:
+    return record
 
 
 class SubscriptionConsumer:
@@ -129,34 +125,41 @@ class SubscriptionConsumer:
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
-        listener = CustomConsumerRebalanceListener(consumer)
+        listener = CustomConsumerRebalanceListener(consumer, self._app, self._subscription.group)
         consumer.subscribe(pattern=pattern, listener=listener)
         await consumer.start()
 
-        handler = partial(_default_handler, _default_parser)  # type: ignore
+        msg_handler = _raw_msg_handler
         sig = inspect.signature(self._subscription.func)
         param_name = [k for k in sig.parameters.keys()][0]
         annotation = sig.parameters[param_name].annotation
         if annotation:
             if annotation == bytes:
-                handler = _raw_handler  # type: ignore
+                msg_handler = _bytes_msg_handler  # type: ignore
             elif annotation == aiokafka.structs.ConsumerRecord:
-                handler = _record_handler  # type: ignore
+                msg_handler = _record_msg_handler  # type: ignore
             else:
-                handler = partial(
-                    _default_handler, partial(_pydantic_parser, annotation)
-                )  # type: ignore
+                msg_handler = partial(_pydantic_msg_handler, annotation)  # type: ignore
 
         await self.emit("started", subscription_consumer=self)
         try:
             # Consume messages
-            async for msg in consumer:
+            async for record in consumer:
                 try:
-                    await handler(self._subscription.func, msg)
-                    await self.emit("message", msg=msg)
+                    msg_data = orjson.loads(record.value)
+                    it = iter(sig.parameters.keys())
+                    kwargs: Dict[str, Any] = {next(it): msg_handler(record, msg_data)}
+                    for key in it:
+                        if key == "schema":
+                            kwargs["schema"] = msg_data["schema"]
+                        elif key == "record":
+                            kwargs["record"] = record
+                    await self._subscription.func(**kwargs)
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
-                    logger.warning(f"Could not process msg: {msg}", exc_info=True)
+                    logger.warning(f"Could not process msg: {record}", exc_info=True)
+                finally:
+                    await self.emit("message", record=record)
         finally:
             try:
                 await consumer.commit()
@@ -363,11 +366,11 @@ class Application:
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> None:
         consumers = []
 
+        consumed = 0
+
         for subscription in self._subscriptions:
 
-            consumed = 0
-
-            async def on_message(msg: aiokafka.structs.ConsumerRecord) -> None:
+            async def on_message(record: aiokafka.structs.ConsumerRecord) -> None:
                 nonlocal consumed
                 consumed += 1
                 if consumed >= num_messages:
@@ -411,8 +414,10 @@ class Application:
 
 
 class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
-    def __init__(self, consumer: aiokafka.AIOKafkaConsumer):
+    def __init__(self, consumer: aiokafka.AIOKafkaConsumer, app: Application, group_id: str):
         self.consumer = consumer
+        self.app = app
+        self.group_id = group_id
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
         ...
@@ -426,17 +431,27 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
             assigned {TopicPartition} -- List of topics and partitions assigned
             to a given consumer.
         """
+        starting_pos = await self.app.topic_mng.list_consumer_group_offsets(
+            self.group_id, partitions=assigned
+        )
         for tp in assigned:
-            try:
-                position = await self.consumer.position(tp)
-                offset = position - 1
-            except aiokafka.errors.IllegalStateError:
-                offset = -1
-
-            if offset > 0:
-                self.consumer.seek(tp, offset)
-            else:
+            if tp not in starting_pos or starting_pos[tp].offset == -1:
+                # detect if we've never consumed from this topic before
+                # decision right now is to go back to beginning
+                # and it's unclear if this is always right decision
                 await self.consumer.seek_to_beginning(tp)
+
+            # XXX go back one message
+            # unclear if this is what we want to do...
+            # try:
+            #     position = await self.consumer.position(tp)
+            #     offset = position - 1
+            # except aiokafka.errors.IllegalStateError:
+            #     offset = -1
+            # if offset > 0:
+            #     self.consumer.seek(tp, offset)
+            # else:
+            #     await self.consumer.seek_to_beginning(tp)
 
 
 cli_parser = argparse.ArgumentParser(description="Run kafkaesk worker.")
@@ -446,9 +461,18 @@ cli_parser.add_argument("--kafka-settings", help="Kafka settings")
 cli_parser.add_argument("--topic-prefix", help="Topic prefix")
 
 
+def _close_app(app: Application, fut: asyncio.Future) -> None:
+    if not fut.done():
+        fut.cancel()
+
+
 async def __run_app(app: Application) -> None:
     async with app:
-        await app.consume_forever()
+        loop = asyncio.get_event_loop()
+        fut = asyncio.create_task(app.consume_forever())
+        for signame in {"SIGINT", "SIGTERM"}:
+            loop.add_signal_handler(getattr(signal, signame), partial(_close_app, app, fut))
+        await fut
 
 
 def run() -> None:
@@ -467,4 +491,7 @@ def run() -> None:
     if opts.topic_prefix:
         app.configure(topic_prefix=opts.topic_prefix)
 
-    asyncio.run(__run_app(app))
+    try:
+        asyncio.run(__run_app(app))
+    except asyncio.CancelledError:
+        logger.info("Closing because task was exited")

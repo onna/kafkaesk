@@ -1,10 +1,32 @@
 from aiokafka import ConsumerRecord
+from kafkaesk.kafka import KafkaTopicManager
 
 import asyncio
 import pydantic
 import pytest
+import uuid
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_data_binding(app):
+    consumed = []
+
+    @app.schema("Foo", streams=["foo.bar"])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar")
+    async def consume(data: Foo, schema, record):
+        consumed.append((data, schema, record))
+
+    async with app:
+        await app.publish("foo.bar", Foo(bar="1"))
+        await app.flush()
+        await app.consume_for(1, seconds=5)
+
+    assert len(consumed) == 1
+    assert len(consumed[0]) == 3
 
 
 async def test_consume_message(app):
@@ -89,18 +111,16 @@ async def test_multiple_subscribers_different_models(app):
         consumed2.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(1, seconds=5))
+        fut = asyncio.create_task(app.consume_for(4, seconds=5))
         await asyncio.sleep(0.2)
 
         await app.publish("foo.bar", Foo1(bar="1"))
-        await app.publish("foo.bar", Foo2(foo="1", bar="1"))
+        await app.publish("foo.bar", Foo2(foo="2", bar="3"))
         await app.flush()
         await fut
 
-    assert len(consumed1) == 1
-    assert len(consumed2) == 1
-    assert isinstance(consumed1[0], Foo1)
-    assert isinstance(consumed2[0], Foo2)
+    assert all([isinstance(v, Foo1) for v in consumed1])
+    assert all([isinstance(v, Foo2) for v in consumed2])
 
 
 async def test_subscribe_diff_data_types(app):
@@ -120,14 +140,73 @@ async def test_subscribe_diff_data_types(app):
         consumed_bytes.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(1, seconds=5))
-        await asyncio.sleep(0.2)
-
         await app.publish("foo.bar", Foo(bar="1"))
         await app.flush()
-        await fut
+        await app.consume_for(1, seconds=5)
 
     assert len(consumed_records) == 1
     assert len(consumed_bytes) == 1
     assert isinstance(consumed_records[0], ConsumerRecord)
     assert isinstance(consumed_bytes[0], bytes)
+
+
+async def test_subscribe_to_topic_that_does_not_exist(app):
+    consumed_records = []
+
+    @app.schema("Foo", version=1)
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar")
+    async def consume_record(data: Foo):
+        consumed_records.append(data)
+
+    async with app:
+        fut = asyncio.create_task(app.consume_for(10, seconds=5))
+        await asyncio.sleep(0.5)
+
+        for idx in range(10):
+            await app.publish("foo.bar", Foo(bar=str(idx)))
+
+        await app.flush()
+        await fut
+
+    assert len(consumed_records) == 10
+
+
+async def test_subscribe_to_topic_that_already_has_messages_for_group(app):
+    consumed_records = []
+
+    @app.schema("Foo", version=1)
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar")
+    async def consume_record(data: Foo):
+        consumed_records.append(data)
+
+    async with app:
+        for idx in range(10):
+            await app.publish("foo.bar", Foo(bar=str(idx)))
+        await app.flush()
+
+        fut = asyncio.create_task(app.consume_for(20, seconds=5))
+
+        for idx in range(10):
+            await app.publish("foo.bar", Foo(bar=str(idx)))
+        await app.flush()
+
+        await fut
+
+    assert len(consumed_records) == 20
+
+
+async def test_cache_topic_exists_topic_mng(kafka):
+    mng = KafkaTopicManager(bootstrap_servers=[f"{kafka[0]}:{kafka[1]}"], prefix=uuid.uuid4().hex)
+
+    topic_id = mng.get_topic_id("foobar")
+    assert not await mng.topic_exists(topic_id)
+    assert topic_id not in mng._topic_cache
+
+    await mng.create_topic(topic_id)
+    assert await mng.topic_exists(topic_id)
