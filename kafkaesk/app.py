@@ -162,7 +162,7 @@ class SubscriptionConsumer:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {record}", exc_info=True)
                 finally:
-                    asyncio.create_task(self.emit("message", record=record))
+                    await self.emit("message", record=record)
         finally:
             try:
                 await consumer.commit()
