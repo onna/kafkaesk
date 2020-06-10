@@ -64,34 +64,30 @@ class SchemaRegistration:
         return f"<SchemaRegistration id: {self.id}, version: {self.version} >"
 
 
-def _default_parser(v: Dict[str, Any]) -> Dict[str, Any]:
-    return v
-
-
-def _pydantic_parser(model: Type[BaseModel], v: Dict[str, Any]) -> BaseModel:
+def _pydantic_msg_handler(
+    model: Type[BaseModel], record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
+) -> BaseModel:
     try:
-        data = model.parse_obj(v)
+        data = model.parse_obj(data["data"])
     except ValidationError:
         raise UnhandledMessage(f"Error parsing data: {model}")
     return data
 
 
-async def _default_handler(
-    parser: Callable, func: Callable[[Dict[str, Any]], Any], msg: aiokafka.structs.ConsumerRecord
-) -> None:
-    payload = orjson.loads(msg.value)
-    data = parser(payload["data"])
-    await func(data)
+def _raw_msg_handler(
+    record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
+) -> Dict[str, Any]:
+    return data
 
 
-async def _raw_handler(func: Callable[[bytes], Any], msg: aiokafka.structs.ConsumerRecord) -> None:
-    await func(msg.value)
+def _bytes_msg_handler(record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]) -> bytes:
+    return record.value
 
 
-async def _record_handler(
-    func: Callable[[aiokafka.structs.ConsumerRecord], Any], msg: aiokafka.structs.ConsumerRecord
-) -> None:
-    await func(msg)
+def _record_msg_handler(
+    record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
+) -> aiokafka.structs.ConsumerRecord:
+    return record
 
 
 class SubscriptionConsumer:
@@ -133,30 +129,37 @@ class SubscriptionConsumer:
         consumer.subscribe(pattern=pattern, listener=listener)
         await consumer.start()
 
-        handler = partial(_default_handler, _default_parser)  # type: ignore
+        msg_handler = _raw_msg_handler
         sig = inspect.signature(self._subscription.func)
         param_name = [k for k in sig.parameters.keys()][0]
         annotation = sig.parameters[param_name].annotation
         if annotation:
             if annotation == bytes:
-                handler = _raw_handler  # type: ignore
+                msg_handler = _bytes_msg_handler  # type: ignore
             elif annotation == aiokafka.structs.ConsumerRecord:
-                handler = _record_handler  # type: ignore
+                msg_handler = _record_msg_handler  # type: ignore
             else:
-                handler = partial(
-                    _default_handler, partial(_pydantic_parser, annotation)
-                )  # type: ignore
+                msg_handler = partial(_pydantic_msg_handler, annotation)
 
         await self.emit("started", subscription_consumer=self)
         try:
             # Consume messages
-            async for msg in consumer:
+            async for record in consumer:
                 try:
-                    await handler(self._subscription.func, msg)
-                    await self.emit("message", msg=msg)
+                    msg_data = orjson.loads(record.value)
+                    it = iter(sig.parameters.keys())
+                    kwargs = {next(it): msg_handler(record, msg_data)}
+                    for key in it:
+                        if key == "schema":
+                            kwargs["schema"] = msg_data["schema"]
+                        elif key == "record":
+                            kwargs["record"] = record
+                    await self._subscription.func(**kwargs)
+
+                    await self.emit("message", record=record)
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
-                    logger.warning(f"Could not process msg: {msg}", exc_info=True)
+                    logger.warning(f"Could not process msg: {record}", exc_info=True)
         finally:
             try:
                 await consumer.commit()

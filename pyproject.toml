@@ -6,7 +6,8 @@ authors = ["vangheem <vangheem@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.7"
-aiokafka = "^0.5.2"
+aiokafka = "^0.6.0"
+kafka-python = "^2.0.1"
 pydantic = "^1.5.1"
 orjson = "^3.0.0"
 jsonschema = "^3.2.0"

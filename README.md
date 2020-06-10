@@ -56,6 +56,19 @@ async def get_messages(data: ContentMessage):
 ```
 
 
+Optional consumer injected parameters:
+
+- schema: str
+- record: aiokafka.structs.ConsumerRecord
+
+Depending on the type annotation for the first parameter, you will get different data injected:
+
+- `async def get_messages(data: ContentMessage)`: parses pydantic schema
+- `async def get_messages(data: bytes)`: give raw byte data
+- `async def get_messages(record: aiokafka.structs.ConsumerRecord)`: give kafka record object
+- `async def get_messages(data)`: raw json data in message
+
+
 ## kafkaesk contract
 
 This is just a library around using kafka.

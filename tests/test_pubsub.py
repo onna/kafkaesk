@@ -7,6 +7,26 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
+async def test_data_binding(app):
+    consumed = []
+
+    @app.schema("Foo", streams=["foo.bar"])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar")
+    async def consume(data: Foo, schema, record):
+        consumed.append((data, schema, record))
+
+    async with app:
+        await app.publish("foo.bar", Foo(bar="1"))
+        await app.flush()
+        await app.consume_for(1, seconds=5)
+
+    assert len(consumed) == 1
+    assert len(consumed[0]) == 3
+
+
 async def test_consume_message(app):
     consumed = []
 
