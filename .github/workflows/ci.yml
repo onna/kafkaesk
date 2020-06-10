@@ -46,6 +46,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Start Docker containers for Zookeeper and Kafka
+        run: docker-compose up -d
+
       - name: Install the package
         run: |
           pip install poetry
