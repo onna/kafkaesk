@@ -43,7 +43,7 @@ class KafkaTopicManager:
         return self._admin_client
 
     async def list_consumer_group_offsets(
-        self, group_id
+        self, group_id: str
     ) -> Dict[kafka.structs.TopicPartition, kafka.structs.OffsetAndMetadata]:
         client = await self.get_admin_client()
         return await run_async(client.list_consumer_group_offsets, group_id)
