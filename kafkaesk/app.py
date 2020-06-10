@@ -16,6 +16,7 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Type
+from typing import Union
 
 import aiokafka
 import aiokafka.errors
@@ -125,10 +126,7 @@ class SubscriptionConsumer:
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
-        listener = CustomConsumerRebalanceListener(
-            consumer,
-            await self._app.topic_mng.list_consumer_group_offsets(self._subscription.group),
-        )
+        listener = CustomConsumerRebalanceListener(consumer, self._app, self._subscription.group)
         consumer.subscribe(pattern=pattern, listener=listener)
         await consumer.start()
 
@@ -417,13 +415,10 @@ class Application:
 
 
 class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
-    def __init__(
-        self,
-        consumer: aiokafka.AIOKafkaConsumer,
-        starting_position: Dict[kafka.structs.TopicPartition, kafka.structs.OffsetAndMetadata],
-    ):
+    def __init__(self, consumer: aiokafka.AIOKafkaConsumer, app: Application, group_id: str):
         self.consumer = consumer
-        self.starting_position = starting_position
+        self.app = app
+        self.group_id = group_id
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
         ...
@@ -437,11 +432,14 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
             assigned {TopicPartition} -- List of topics and partitions assigned
             to a given consumer.
         """
+        starting_pos = await self.app.topic_mng.list_consumer_group_offsets(
+            self.group_id, partitions=assigned
+        )
         for tp in assigned:
-            if tp not in self.starting_position:
+            if tp not in starting_pos or starting_pos[tp].offset == -1:
                 # detect if we've never consumed from this topic before
                 # decision right now is to go back to beginning
-                # unclear if this is right decision
+                # and it's unclear if this is always right decision
                 await self.consumer.seek_to_beginning(tp)
 
             # XXX go back one message

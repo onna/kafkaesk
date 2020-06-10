@@ -14,4 +14,5 @@ class TopicPartition:
 
 
 class OffsetAndMetadata:
-    ...
+    offset: int
+    metadata: str

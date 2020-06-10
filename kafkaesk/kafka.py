@@ -1,3 +1,4 @@
+from aiokafka import TopicPartition
 from kafkaesk.utils import run_async
 from typing import Any
 from typing import Dict
@@ -43,10 +44,10 @@ class KafkaTopicManager:
         return self._admin_client
 
     async def list_consumer_group_offsets(
-        self, group_id: str
+        self, group_id: str, partitions: Optional[List[TopicPartition]] = None
     ) -> Dict[kafka.structs.TopicPartition, kafka.structs.OffsetAndMetadata]:
         client = await self.get_admin_client()
-        return await run_async(client.list_consumer_group_offsets, group_id)
+        return await run_async(client.list_consumer_group_offsets, group_id, partitions=partitions)
 
     async def topic_exists(self, topic: str) -> bool:
         if self._client is None:
