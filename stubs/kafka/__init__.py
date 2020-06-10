@@ -28,3 +28,6 @@ class KafkaClient:
 
     def close(self) -> None:
         ...
+
+    def topics(self) -> List[str]:
+        ...

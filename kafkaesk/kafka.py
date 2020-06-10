@@ -18,7 +18,7 @@ class KafkaTopicManager:
         self.prefix = prefix
         self._bootstrap_servers = bootstrap_servers
         self._admin_client = self._client = None
-        self._cached = []
+        self._cached: List[str] = []
 
     async def finalize(self) -> None:
         if self._admin_client is not None:

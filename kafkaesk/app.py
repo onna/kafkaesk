@@ -68,10 +68,9 @@ def _pydantic_msg_handler(
     model: Type[BaseModel], record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
 ) -> BaseModel:
     try:
-        data = model.parse_obj(data["data"])
+        return model.parse_obj(data["data"])
     except ValidationError:
         raise UnhandledMessage(f"Error parsing data: {model}")
-    return data
 
 
 def _raw_msg_handler(
@@ -139,7 +138,7 @@ class SubscriptionConsumer:
             elif annotation == aiokafka.structs.ConsumerRecord:
                 msg_handler = _record_msg_handler  # type: ignore
             else:
-                msg_handler = partial(_pydantic_msg_handler, annotation)
+                msg_handler = partial(_pydantic_msg_handler, annotation)  # type: ignore
 
         await self.emit("started", subscription_consumer=self)
         try:
@@ -148,7 +147,7 @@ class SubscriptionConsumer:
                 try:
                     msg_data = orjson.loads(record.value)
                     it = iter(sig.parameters.keys())
-                    kwargs = {next(it): msg_handler(record, msg_data)}
+                    kwargs: Dict[str, Any] = {next(it): msg_handler(record, msg_data)}
                     for key in it:
                         if key == "schema":
                             kwargs["schema"] = msg_data["schema"]
