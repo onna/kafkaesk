@@ -133,7 +133,7 @@ class SubscriptionConsumer:
         sig = inspect.signature(self._subscription.func)
         param_name = [k for k in sig.parameters.keys()][0]
         annotation = sig.parameters[param_name].annotation
-        if annotation:
+        if annotation and annotation != sig.empty:
             if annotation == bytes:
                 msg_handler = _bytes_msg_handler  # type: ignore
             elif annotation == aiokafka.structs.ConsumerRecord:
@@ -475,21 +475,24 @@ async def __run_app(app: Application) -> None:
         await fut
 
 
-def run() -> None:
-    opts = cli_parser.parse_args()
-    module_str, attr = opts.app.split(":")
-    module = resolve_dotted_name(module_str)
-    app = getattr(module, attr)
+def run(app: Optional[Application] = None) -> None:
+    if app is None:
+        opts = cli_parser.parse_args()
+        module_str, attr = opts.app.split(":")
+        module = resolve_dotted_name(module_str)
+        app = getattr(module, attr)
 
-    if callable(app):
-        app = app()
+        if callable(app):
+            app = app()
 
-    if opts.kafka_servers:
-        app.configure(kafka_servers=opts.kafka_servers.split(","))
-    if opts.kafka_settings:
-        app.configure(kafka_settings=orjson.loads(opts.kafka_settings))
-    if opts.topic_prefix:
-        app.configure(topic_prefix=opts.topic_prefix)
+        app = cast(Application, app)
+
+        if opts.kafka_servers:
+            app.configure(kafka_servers=opts.kafka_servers.split(","))
+        if opts.kafka_settings:
+            app.configure(kafka_settings=orjson.loads(opts.kafka_settings))
+        if opts.topic_prefix:
+            app.configure(topic_prefix=opts.topic_prefix)
 
     try:
         asyncio.run(__run_app(app))
