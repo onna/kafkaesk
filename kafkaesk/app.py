@@ -33,14 +33,10 @@ logger = logging.getLogger("kafkaesk")
 
 
 class Subscription:
-    def __init__(
-        self, stream_id: str, func: Callable, group: str, max_partitions: int, max_concurrency: int
-    ):
+    def __init__(self, stream_id: str, func: Callable, group: str):
         self.stream_id = stream_id
         self.func = func
         self.group = group
-        self.max_partitions = max_partitions
-        self.max_concurrency = max_concurrency
 
     def __repr__(self) -> str:
         return f"<Subscription stream: {self.stream_id} >"
@@ -262,21 +258,9 @@ class Application:
         if self._producer is not None:
             await self._producer.flush()
 
-    def subscribe(
-        self,
-        stream_id: str,
-        group: Optional[str] = None,
-        max_partitions: int = 40,
-        max_concurrency: int = 3,
-    ) -> Callable:
+    def subscribe(self, stream_id: str, group: Optional[str] = None,) -> Callable:
         def inner(func: Callable) -> Callable:
-            subscription = Subscription(
-                stream_id,
-                func,
-                group or func.__name__,
-                max_partitions=max_partitions,
-                max_concurrency=max_concurrency,
-            )
+            subscription = Subscription(stream_id, func, group or func.__name__)
             self._subscriptions.append(subscription)
             return func
 
