@@ -2,7 +2,7 @@
 name = "kafkaesk"
 version = "0.1.10"
 description = "This project is meant to help facilitate easily publishing and subscribing to events with python and Kafka."
-authors = ["vangheem <vangheem@gmail.com>"]
+authors = ["vangheem <vangheem@gmail.com>", "pfreixes <pfreixes@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.7"

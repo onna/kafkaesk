@@ -3,7 +3,6 @@ from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
-from .schema import SchemaManager
 from .utils import resolve_dotted_name
 from functools import partial
 from pydantic import BaseModel
@@ -190,7 +189,6 @@ class Application:
 
         self._topic_prefix = topic_prefix
         self._topic_mng: Optional[KafkaTopicManager] = None
-        self._schema_mng: Optional[SchemaManager] = None
 
     @property
     def topic_mng(self) -> KafkaTopicManager:
@@ -199,14 +197,6 @@ class Application:
                 cast(List[str], self._kafka_servers), self._topic_prefix
             )
         return self._topic_mng
-
-    @property
-    def schema_mng(self) -> SchemaManager:
-        if self._schema_mng is None:
-            self._schema_mng = SchemaManager(
-                cast(List[str], self._kafka_servers), topic_prefix=self._topic_prefix
-            )
-        return self._schema_mng
 
     def get_lock(self, name: str) -> asyncio.Lock:
         if name not in self._locks:
@@ -304,11 +294,6 @@ class Application:
 
     async def initialize(self) -> None:
 
-        await self.schema_mng.initialize()
-
-        for reg in self._schemas.values():
-            await self.schema_mng.register(reg)
-
         for reg in self._schemas.values():
             # initialize topics for known streams
             for stream_id in reg.streams or []:
@@ -328,7 +313,6 @@ class Application:
         if self._producer is not None:
             await self._producer.flush()
             await self._producer.stop()
-        await self.schema_mng.finalize()
 
         if self._topic_mng is not None:
             await self._topic_mng.finalize()
@@ -336,7 +320,6 @@ class Application:
         self._producer = None
         self._intialized = False
         self._topic_mng = None
-        self._schema_mng = None
 
         self._intialized = False
 
