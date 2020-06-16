@@ -156,9 +156,6 @@ KAFKA=localhost:9092 poetry run pytest tests
 (or a todo here)
 
 - [x] worker
-- [ ] auto scaling/concurrency
-    - automatically increase concurrency
-    - automatically increase number of partitions
 - [ ] service to inspect stats
 - [ ] be able to handle manual commit use-case
 - [ ] be able to reject commit/abort message handling
