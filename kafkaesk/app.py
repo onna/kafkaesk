@@ -141,6 +141,7 @@ class SubscriptionConsumer:
             # Consume messages
             async for record in consumer:
                 try:
+                    logger.info(f"Handling msg: {record}")
                     msg_data = orjson.loads(record.value)
                     it = iter(sig.parameters.keys())
                     kwargs: Dict[str, Any] = {next(it): msg_handler(record, msg_data)}
@@ -401,6 +402,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
         starting_pos = await self.app.topic_mng.list_consumer_group_offsets(
             self.group_id, partitions=assigned
         )
+        logger.info(f"Partitions assigned: {assigned}")
         for tp in assigned:
             if tp not in starting_pos or starting_pos[tp].offset == -1:
                 # detect if we've never consumed from this topic before
@@ -430,6 +432,7 @@ cli_parser.add_argument("--topic-prefix", help="Topic prefix")
 
 def _close_app(app: Application, fut: asyncio.Future) -> None:
     if not fut.done():
+        logger.info(f"Cancelling consumer from signal")
         fut.cancel()
 
 
@@ -440,6 +443,7 @@ async def __run_app(app: Application) -> None:
         for signame in {"SIGINT", "SIGTERM"}:
             loop.add_signal_handler(getattr(signal, signame), partial(_close_app, app, fut))
         await fut
+        logger.info(f"Exiting consumer")
 
 
 def run(app: Optional[Application] = None) -> None:
@@ -462,6 +466,7 @@ def run(app: Optional[Application] = None) -> None:
             app.configure(topic_prefix=opts.topic_prefix)
 
     try:
+        logger.info(f"Running kafkaesk consumer {app}")
         asyncio.run(__run_app(app))
     except asyncio.CancelledError:
         logger.info("Closing because task was exited")
