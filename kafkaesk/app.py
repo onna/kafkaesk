@@ -109,14 +109,19 @@ class SubscriptionConsumer:
         try:
             while True:
                 await self.__run()
+        except aiokafka.errors.UnrecognizedBrokerVersion:
+            logger.error("Could not determine kafka version. Exiting")
+        except aiokafka.errors.KafkaConnectionError:
+            logger.warning(f"Connection error", exc_info=True)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
-            ...
+            logger.info("Consumer stopped, exiting")
 
     async def __run(self) -> None:
         consumer = aiokafka.AIOKafkaConsumer(
             bootstrap_servers=cast(List[str], self._app._kafka_servers),
             loop=asyncio.get_event_loop(),
             group_id=self._subscription.group,
+            api_version=self._app._kafka_api_version,
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
@@ -179,6 +184,7 @@ class Application:
         kafka_servers: Optional[List[str]] = None,
         topic_prefix: str = "",
         kafka_settings: Optional[Dict[str, Any]] = None,
+        kafka_api_version: str = "auto",
     ):
         self._subscriptions: List[Subscription] = []
         self._schemas: Dict[str, SchemaRegistration] = {}
@@ -188,6 +194,7 @@ class Application:
         self._intialized = False
         self._locks: Dict[str, asyncio.Lock] = {}
 
+        self._kafka_api_version = kafka_api_version
         self._topic_prefix = topic_prefix
         self._topic_mng: Optional[KafkaTopicManager] = None
 
@@ -195,7 +202,7 @@ class Application:
     def topic_mng(self) -> KafkaTopicManager:
         if self._topic_mng is None:
             self._topic_mng = KafkaTopicManager(
-                cast(List[str], self._kafka_servers), self._topic_prefix
+                cast(List[str], self._kafka_servers), self._topic_prefix,
             )
         return self._topic_mng
 
@@ -209,6 +216,7 @@ class Application:
         kafka_servers: Optional[List[str]] = None,
         topic_prefix: Optional[str] = None,
         kafka_settings: Optional[Dict[str, Any]] = None,
+        api_version: Optional[str] = None,
     ) -> None:
         if kafka_servers is not None:
             self._kafka_servers = kafka_servers
@@ -216,6 +224,8 @@ class Application:
             self._topic_prefix = topic_prefix
         if kafka_settings is not None:
             self._kafka_settings = kafka_settings
+        if api_version is not None:
+            self._kafka_api_version = api_version
 
     async def publish(
         self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
@@ -289,6 +299,7 @@ class Application:
             self._producer = aiokafka.AIOKafkaProducer(
                 bootstrap_servers=cast(List[str], self._kafka_servers),
                 loop=asyncio.get_event_loop(),
+                api_version=self._kafka_api_version,
             )
             await self._producer.start()
         return self._producer
@@ -428,6 +439,7 @@ cli_parser.add_argument("app", help="Application object")
 cli_parser.add_argument("--kafka-servers", help="Kafka servers")
 cli_parser.add_argument("--kafka-settings", help="Kafka settings")
 cli_parser.add_argument("--topic-prefix", help="Topic prefix")
+cli_parser.add_argument("--api-version", help="Kafka API Version")
 
 
 def _close_app(app: Application, fut: asyncio.Future) -> None:
@@ -464,6 +476,8 @@ def run(app: Optional[Application] = None) -> None:
             app.configure(kafka_settings=orjson.loads(opts.kafka_settings))
         if opts.topic_prefix:
             app.configure(topic_prefix=opts.topic_prefix)
+        if opts.api_version:
+            app.configure(api_version=opts.api_version)
 
     try:
         logger.info(f"Running kafkaesk consumer {app}")

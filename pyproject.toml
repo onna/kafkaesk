@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kafkaesk"
-version = "0.1.12"
+version = "0.1.13"
 description = "This project is meant to help facilitate easily publishing and subscribing to events with python and Kafka."
 authors = ["vangheem <vangheem@gmail.com>", "pfreixes <pfreixes@gmail.com>"]
 
