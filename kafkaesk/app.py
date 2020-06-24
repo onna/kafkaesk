@@ -112,7 +112,7 @@ class SubscriptionConsumer:
         except aiokafka.errors.UnrecognizedBrokerVersion:
             logger.error("Could not determine kafka version. Exiting")
         except aiokafka.errors.KafkaConnectionError:
-            logger.warning(f"Connection error", exc_info=True)
+            logger.warning("Connection error", exc_info=True)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
             logger.info("Consumer stopped, exiting")
 
@@ -444,7 +444,7 @@ cli_parser.add_argument("--api-version", help="Kafka API Version")
 
 def _close_app(app: Application, fut: asyncio.Future) -> None:
     if not fut.done():
-        logger.info(f"Cancelling consumer from signal")
+        logger.info("Cancelling consumer from signal")
         fut.cancel()
 
 
@@ -455,7 +455,7 @@ async def __run_app(app: Application) -> None:
         for signame in {"SIGINT", "SIGTERM"}:
             loop.add_signal_handler(getattr(signal, signame), partial(_close_app, app, fut))
         await fut
-        logger.info(f"Exiting consumer")
+        logger.info("Exiting consumer")
 
 
 def run(app: Optional[Application] = None) -> None:
