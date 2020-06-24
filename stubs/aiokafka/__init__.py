@@ -15,6 +15,7 @@ class AIOKafkaProducer:
         loop: AbstractEventLoop,
         enable_auto_commit: Optional[bool] = True,
         group_id: Optional[str] = None,
+        api_version: str = "auto",
     ):
         ...
 
@@ -39,6 +40,7 @@ class AIOKafkaConsumer:
         bootstrap_servers: List[str],
         loop: AbstractEventLoop,
         group_id: Optional[str],
+        api_version: str = "auto",
         **kwargs: Any,
     ):
         ...
