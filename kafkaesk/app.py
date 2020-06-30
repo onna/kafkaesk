@@ -259,7 +259,7 @@ class Application:
         if self._producer is not None:
             await self._producer.flush()
 
-    def subscribe(self, stream_id: str, group: Optional[str] = None,) -> Callable:
+    def subscribe(self, stream_id: str, group: str,) -> Callable:
         def inner(func: Callable) -> Callable:
             subscription = Subscription(stream_id, func, group or func.__name__)
             self._subscriptions.append(subscription)
