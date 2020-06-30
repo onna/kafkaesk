@@ -1,6 +1,7 @@
 from kafkaesk import Application
-import asyncio
 from pydantic import BaseModel
+
+import asyncio
 
 app = Application()
 
@@ -11,7 +12,7 @@ class Foobar(BaseModel):
     bar: str
 
 
-@app.subscribe("content.*")
+@app.subscribe("content.*", group="example_content_group")
 async def messages(data: Foobar):
     print(f"{data.foo}: {data.bar}")
 

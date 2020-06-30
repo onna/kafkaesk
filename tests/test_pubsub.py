@@ -16,7 +16,7 @@ async def test_data_binding(app):
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume(data: Foo, schema, record):
         consumed.append((data, schema, record))
 
@@ -36,7 +36,7 @@ async def test_consume_message(app):
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume(data: Foo):
         consumed.append(data)
 
@@ -55,7 +55,7 @@ async def test_consume_many_messages(app):
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume(data: Foo):
         consumed.append(data)
 
@@ -77,7 +77,7 @@ async def test_not_consume_message_that_does_not_match(app):
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume(data: Foo):
         consumed.append(data)
 
@@ -87,6 +87,18 @@ async def test_not_consume_message_that_does_not_match(app):
         await app.consume_for(1, seconds=1)
 
     assert len(consumed) == 0
+
+
+async def test_subscribe_without_group(app):
+    @app.schema("Foo")
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    with pytest.raises(TypeError):
+
+        @app.subscribe("foo.bar")
+        async def consume(data: Foo):
+            ...
 
 
 async def test_multiple_subscribers_different_models(app):
@@ -102,11 +114,11 @@ async def test_multiple_subscribers_different_models(app):
         foo: str
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume1(data: Foo1):
         consumed1.append(data)
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group_2")
     async def consume2(data: Foo2):
         consumed2.append(data)
 
@@ -131,11 +143,11 @@ async def test_subscribe_diff_data_types(app):
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume_record(data: ConsumerRecord):
         consumed_records.append(data)
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group_2")
     async def consume_bytes(data: bytes):
         consumed_bytes.append(data)
 
@@ -157,7 +169,7 @@ async def test_subscribe_to_topic_that_does_not_exist(app):
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume_record(data: Foo):
         consumed_records.append(data)
 
@@ -181,7 +193,7 @@ async def test_subscribe_to_topic_that_already_has_messages_for_group(app):
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar")
+    @app.subscribe("foo.bar", group="test_group")
     async def consume_record(data: Foo):
         consumed_records.append(data)
 
