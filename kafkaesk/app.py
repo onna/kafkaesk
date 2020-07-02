@@ -197,13 +197,16 @@ class Application:
 
         self._kafka_api_version = kafka_api_version
         self._topic_prefix = topic_prefix
+        self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
 
     @property
     def topic_mng(self) -> KafkaTopicManager:
         if self._topic_mng is None:
             self._topic_mng = KafkaTopicManager(
-                cast(List[str], self._kafka_servers), self._topic_prefix,
+                cast(List[str], self._kafka_servers),
+                self._topic_prefix,
+                replication_factor=self._replication_factor,
             )
         return self._topic_mng
 
