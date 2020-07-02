@@ -184,6 +184,7 @@ class Application:
         kafka_servers: Optional[List[str]] = None,
         topic_prefix: str = "",
         kafka_settings: Optional[Dict[str, Any]] = None,
+        replication_factor: Optional[int] = None,
         kafka_api_version: str = "auto",
     ):
         self._subscriptions: List[Subscription] = []
@@ -196,13 +197,16 @@ class Application:
 
         self._kafka_api_version = kafka_api_version
         self._topic_prefix = topic_prefix
+        self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
 
     @property
     def topic_mng(self) -> KafkaTopicManager:
         if self._topic_mng is None:
             self._topic_mng = KafkaTopicManager(
-                cast(List[str], self._kafka_servers), self._topic_prefix,
+                cast(List[str], self._kafka_servers),
+                self._topic_prefix,
+                replication_factor=self._replication_factor,
             )
         return self._topic_mng
 
@@ -217,6 +221,7 @@ class Application:
         topic_prefix: Optional[str] = None,
         kafka_settings: Optional[Dict[str, Any]] = None,
         api_version: Optional[str] = None,
+        replication_factor: Optional[int] = None,
     ) -> None:
         if kafka_servers is not None:
             self._kafka_servers = kafka_servers
@@ -226,6 +231,8 @@ class Application:
             self._kafka_settings = kafka_settings
         if api_version is not None:
             self._kafka_api_version = api_version
+        if replication_factor is not None:
+            self._replication_factor = replication_factor
 
     async def publish(
         self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
@@ -245,6 +252,7 @@ class Application:
                 reg = self.get_schema_reg(data)
                 await self.topic_mng.create_topic(
                     topic_id,
+                    replication_factor=self._replication_factor,
                     retention_ms=reg.retention * 1000 if reg.retention is not None else None,
                 )
 

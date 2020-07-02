@@ -6,7 +6,9 @@ import kafka.structs
 
 
 class NewTopic:
-    def __init__(self, topic: str, partitions: int, replicas: int, topic_configs: Dict[str, Any]):
+    def __init__(
+        self, topic: str, partitions: int, replication_factor: int, topic_configs: Dict[str, Any]
+    ):
         ...
 
 

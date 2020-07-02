@@ -16,11 +16,17 @@ class KafkaTopicManager:
     _admin_client: Optional[kafka.admin.client.KafkaAdminClient]
     _client: Optional[kafka.KafkaClient]
 
-    def __init__(self, bootstrap_servers: List[str], prefix: str = ""):
+    def __init__(
+        self,
+        bootstrap_servers: List[str],
+        prefix: str = "",
+        replication_factor: Optional[int] = None,
+    ):
         self.prefix = prefix
         self._bootstrap_servers = bootstrap_servers
         self._admin_client = self._client = None
         self._topic_cache: List[str] = []
+        self._replication_factor: int = replication_factor or len(self._bootstrap_servers)
 
     async def finalize(self) -> None:
         if self._admin_client is not None:
@@ -32,9 +38,6 @@ class KafkaTopicManager:
 
     def get_topic_id(self, topic: str) -> str:
         return f"{self.prefix}{topic}"
-
-    def get_schema_topic_id(self, schema_name: str) -> str:
-        return f"{self.prefix}__schema__{schema_name}"
 
     async def get_admin_client(self) -> kafka.admin.client.KafkaAdminClient:
         if self._admin_client is None:
@@ -66,7 +69,7 @@ class KafkaTopicManager:
         topic: str,
         *,
         partitions: int = 7,
-        replicas: int = 1,
+        replication_factor: Optional[int] = None,
         retention_ms: Optional[int] = None,
         cleanup_policy: Optional[str] = None,
     ) -> None:
@@ -75,7 +78,12 @@ class KafkaTopicManager:
             topic_configs["retention.ms"] = retention_ms
         if cleanup_policy is not None:
             topic_configs["cleanup.policy"] = cleanup_policy
-        new_topic = kafka.admin.NewTopic(topic, partitions, replicas, topic_configs=topic_configs)
+        new_topic = kafka.admin.NewTopic(
+            topic,
+            partitions,
+            replication_factor or self._replication_factor,
+            topic_configs=topic_configs,
+        )
         client = await self.get_admin_client()
         try:
             await run_async(client.create_topics, [new_topic])
