@@ -39,9 +39,6 @@ class KafkaTopicManager:
     def get_topic_id(self, topic: str) -> str:
         return f"{self.prefix}{topic}"
 
-    def get_schema_topic_id(self, schema_name: str) -> str:
-        return f"{self.prefix}__schema__{schema_name}"
-
     async def get_admin_client(self) -> kafka.admin.client.KafkaAdminClient:
         if self._admin_client is None:
             self._admin_client = await run_async(

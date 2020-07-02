@@ -81,12 +81,6 @@ Kafka itself does not enforce these concepts.
 - consumed message schema validation is up to the consumer
 - messages will be consumed at least once. Considering this, your handling should be idempotent
 
-
-### schema storage
-
-- json schemas are with topics prefixed with `__schema__`. So 'Content' schema will have `__schema__Content` topic.
-- schemas are constant. You should never change a schema
-
 ### message format
 
 ```json
