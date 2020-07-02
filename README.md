@@ -102,7 +102,7 @@ Options:
  - --kafka-servers: comma separated list of kafka servers
  - --kafka-settings: json encoded options to be passed to https://aiokafka.readthedocs.io/en/stable/api.html#aiokafkaconsumer-class
  - --topic-prefix: prefix to use for topics
- - --replication-factor: what replication factor topics should be created with. Defaults to number of servers.
+ - --replication-factor: what replication factor topics should be created with. Defaults to min(number of servers, 3).
 
 
 ## Application.publish
@@ -130,7 +130,7 @@ Options:
 - kafka_servers: Optional[List[str]]: kafka servers to connect to
 - topic_prefix: Optional[str]: topic name prefix to subscribe to
 - kafka_settings: Optional[Dict[str, Any]]: additional aiokafka settings to pass in
-- replication_factor: Optional[int]: what replication factor topics should be created with. Defaults to number of servers.
+- replication_factor: Optional[int]: what replication factor topics should be created with. Defaults to min(number of servers, 3).
 
 ## Dev
 
