@@ -26,7 +26,7 @@ class KafkaTopicManager:
         self._bootstrap_servers = bootstrap_servers
         self._admin_client = self._client = None
         self._topic_cache: List[str] = []
-        self._replication_factor: int = replication_factor or len(self._bootstrap_servers)
+        self._replication_factor: int = replication_factor or min(3, len(self._bootstrap_servers))
 
     async def finalize(self) -> None:
         if self._admin_client is not None:
