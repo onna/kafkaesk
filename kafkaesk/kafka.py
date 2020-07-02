@@ -66,7 +66,7 @@ class KafkaTopicManager:
         topic: str,
         *,
         partitions: int = 7,
-        replicas: int = 1,
+        replication_factor: int = 3,
         retention_ms: Optional[int] = None,
         cleanup_policy: Optional[str] = None,
     ) -> None:
@@ -75,7 +75,9 @@ class KafkaTopicManager:
             topic_configs["retention.ms"] = retention_ms
         if cleanup_policy is not None:
             topic_configs["cleanup.policy"] = cleanup_policy
-        new_topic = kafka.admin.NewTopic(topic, partitions, replicas, topic_configs=topic_configs)
+        new_topic = kafka.admin.NewTopic(
+            topic, partitions, replication_factor, topic_configs=topic_configs
+        )
         client = await self.get_admin_client()
         try:
             await run_async(client.create_topics, [new_topic])
