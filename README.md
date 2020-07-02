@@ -108,6 +108,7 @@ Options:
  - --kafka-servers: comma separated list of kafka servers
  - --kafka-settings: json encoded options to be passed to https://aiokafka.readthedocs.io/en/stable/api.html#aiokafkaconsumer-class
  - --topic-prefix: prefix to use for topics
+ - --replication-factor: what replication factor topics should be created with. Defaults to number of servers.
 
 
 ## Application.publish
@@ -120,8 +121,6 @@ Options:
 
 - stream_id: str: fnmatch pattern of streams to subscribe to
 - group: Optional[str]: consumer group id to use. Will use name of function if not provided
-- max_partitions: Optional[int]: max number of partitions(default 40)
-- max_concurrency: Optional[int]: max number of concurrent consumers instances(default 3)
 
 
 ## Application.schema
@@ -137,6 +136,7 @@ Options:
 - kafka_servers: Optional[List[str]]: kafka servers to connect to
 - topic_prefix: Optional[str]: topic name prefix to subscribe to
 - kafka_settings: Optional[Dict[str, Any]]: additional aiokafka settings to pass in
+- replication_factor: Optional[int]: what replication factor topics should be created with. Defaults to number of servers.
 
 ## Dev
 
@@ -160,8 +160,6 @@ KAFKA=localhost:9092 poetry run pytest tests
 - [ ] be able to handle manual commit use-case
 - [ ] be able to reject commit/abort message handling
 - [ ] prometheus
-- [ ] automatic "connectors"
-
 
 # Naming things
 
