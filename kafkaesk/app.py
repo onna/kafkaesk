@@ -456,7 +456,7 @@ def _close_app(app: Application, fut: asyncio.Future) -> None:
         fut.cancel()
 
 
-async def __run_app(app: Application) -> None:
+async def run_app(app: Application) -> None:
     async with app:
         loop = asyncio.get_event_loop()
         fut = asyncio.create_task(app.consume_forever())
@@ -489,6 +489,6 @@ def run(app: Optional[Application] = None) -> None:
 
     try:
         logger.info(f"Running kafkaesk consumer {app}")
-        asyncio.run(__run_app(app))
+        asyncio.run(run_app(app))
     except asyncio.CancelledError:
         logger.info("Closing because task was exited")
