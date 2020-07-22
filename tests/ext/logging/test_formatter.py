@@ -28,9 +28,9 @@ def make_traceback():
     return tb
 
 
-def make_stackinfo(stacklevel=1):
+def make_stackinfo():
     logger = logging.getLogger()
-    _, _, _, sinfo = logger.findCaller(stack_info=True, stacklevel=stacklevel)
+    _, _, _, sinfo = logger.findCaller(stack_info=True)
     return sinfo
 
 
