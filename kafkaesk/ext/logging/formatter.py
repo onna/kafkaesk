@@ -32,13 +32,12 @@ class PydanticFormatter(logging.Formatter):
         fmt: Optional[str] = None,
         datefmt: Optional[str] = None,
         style: str = "%",
-        validate: bool = True,
     ):
         self.format_class = model
         self._init_logrecord_factory()
-        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style)
 
-    def _init_logrecord_factory(self):
+    def _init_logrecord_factory(self) -> None:
         if logging.getLogRecordFactory() != factory:
             logging.setLogRecordFactory(factory)
 
