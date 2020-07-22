@@ -38,6 +38,8 @@ class LogQueue:
             stream, message = await self._queue.get()
             try:
                 await self._app.publish(stream, message)
+            except Exception as err:
+                print(err)
             finally:
                 self._queue.task_done()
 

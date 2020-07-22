@@ -1,13 +1,11 @@
 from kafkaesk.ext.logging.formatter import PydanticFormatter
+from kafkaesk.ext.logging.formatter import PydanticLogModel
 from kafkaesk.ext.logging.handler import PydanticKafkaeskHandler
 from kafkaesk.ext.logging.handler import PydanticStreamHandler
 from typing import Optional
-from unittest import mock
 
-import asyncio
 import io
 import json
-import kafkaesk
 import logging
 import pydantic
 import pytest
@@ -37,12 +35,6 @@ def stream_handler(logger):
 
 
 @pytest.fixture(scope="function")
-def app():
-    with mock.patch("kafkaesk.app.Application", autospec=True) as kafka_mock:
-        yield kafkaesk.app.Application()
-
-
-@pytest.fixture(scope="function")
 def kafakesk_handler(app, logger):
     handler = PydanticKafkaeskHandler(app, "log.test")
     handler.setFormatter(PydanticFormatter())
@@ -53,6 +45,7 @@ def kafakesk_handler(app, logger):
 
 class TestPydanticStreamHandler:
     async def test_stream_handler(self, stream_handler, logger):
+
         logger.info("Test Message %s", "extra")
 
         message = stream_handler.getvalue()
@@ -77,23 +70,40 @@ class TestPydanticStreamHandler:
 
 class TestPydanticKafkaeskHandler:
     async def test_kafak_handler(self, app, kafakesk_handler, logger):
-        logger.info("Test Message %s", "extra")
+        consumed = []
 
-        await asyncio.sleep(1)
+        app.schema("PydanticLogModel")(PydanticLogModel)
 
-        assert app.publish.await_count == 1
-        assert app.publish.await_args[0][0] == "log.test"
-        assert app.publish.await_args[0][1].message == "Test Message extra"
+        @app.subscribe("log.test", group="test_group")
+        async def consume(data: PydanticLogModel):
+            consumed.append(data)
+
+        async with app:
+            logger.info("Test Message %s", "extra")
+            await app.flush()
+            await app.consume_for(1, seconds=5)
+
+        assert len(consumed) == 1
+        assert consumed[0].message == "Test Message extra"
 
     async def test_kafka_handler_with_log_model(self, app, kafakesk_handler, logger):
+        consumed = []
+
+        app.schema("PydanticLogModel")(PydanticLogModel)
+
+        @app.subscribe("log.test", group="test_group")
+        async def consume(data: PydanticLogModel):
+            consumed.append(data)
+
         class LogModel(pydantic.BaseModel):
             _is_log_model = True
             foo: Optional[str]
 
-        logger.info("Test Message %s", "extra", LogModel(foo="bar"))
+        async with app:
+            logger.info("Test Message %s", "extra", LogModel(foo="bar"))
+            await app.flush()
+            await app.consume_for(1, seconds=5)
 
-        await asyncio.sleep(1)
-
-        assert app.publish.await_count == 1
-        assert app.publish.await_args[0][1].message == "Test Message extra"
-        assert app.publish.await_args[0][1].foo == "bar"
+        assert len(consumed) == 1
+        assert consumed[0].message == "Test Message extra"
+        assert consumed[0].foo == "bar"
