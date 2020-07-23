@@ -65,8 +65,15 @@ class PydanticKafkaeskHandler(logging.Handler):
 
         self._queue: Optional[LogQueue] = None
         self._queue_task: Optional[asyncio.Future] = None
+        self._initialize_model()
 
         super().__init__()
+
+    def _initialize_model(self) -> None:
+        try:
+            self.app.schema("PydanticLogModel")(PydanticLogModel)
+        except kafkaesk.app.SchemaConflictException:
+            pass
 
     def _initialize_queue(self) -> None:
         self._queue = LogQueue(self.app)

@@ -75,4 +75,6 @@ class PydanticFormatter(logging.Formatter):
         base_log = self._format_base_log(record)
         extra = self._format_extra_logs(record)
 
-        return PydanticLogModel(**base_log, **extra)
+        extra.update(base_log)
+
+        return PydanticLogModel(**extra)

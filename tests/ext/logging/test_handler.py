@@ -72,8 +72,6 @@ class TestPydanticKafkaeskHandler:
     async def test_kafak_handler(self, app, kafakesk_handler, logger):
         consumed = []
 
-        app.schema("PydanticLogModel")(PydanticLogModel)
-
         @app.subscribe("log.test", group="test_group")
         async def consume(data: PydanticLogModel):
             consumed.append(data)
@@ -88,8 +86,6 @@ class TestPydanticKafkaeskHandler:
 
     async def test_kafka_handler_with_log_model(self, app, kafakesk_handler, logger):
         consumed = []
-
-        app.schema("PydanticLogModel")(PydanticLogModel)
 
         @app.subscribe("log.test", group="test_group")
         async def consume(data: PydanticLogModel):
