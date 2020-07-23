@@ -13,7 +13,8 @@ import pydantic
 class BaseLogFormat(pydantic.BaseModel):
     timestamp: str = pydantic.Field(alias="asctime")
     logger: str = pydantic.Field(alias="name")
-    level: str = pydantic.Field(alias="levelname")
+    severity: str = pydantic.Field(alias="levelname")
+    level: int = pydantic.Field(alias="levelno")
     message: str
     exception: Optional[str] = pydantic.Field(alias="exc_type")
     trace: Optional[str] = pydantic.Field(alias="exc_text")

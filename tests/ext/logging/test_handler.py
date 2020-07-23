@@ -52,7 +52,8 @@ class TestPydanticStreamHandler:
         data = json.loads(message)
 
         assert data["message"] == "Test Message extra"
-        assert data["level"] == "INFO"
+        assert data["level"] == 20
+        assert data["severity"] == "INFO"
 
     async def test_stream_handler_with_log_model(self, stream_handler, logger):
         class LogModel(pydantic.BaseModel):
