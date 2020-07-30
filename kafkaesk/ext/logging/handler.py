@@ -36,6 +36,8 @@ class KafkaeskQueue:
         self._queue: asyncio.Queue[Tuple[str, BaseModel]] = asyncio.Queue()
         self._app = app
 
+        self._app.on("finalize", self.flush)
+
         self._loop = loop or asyncio.get_event_loop()
         self._task: Optional[asyncio.Task] = None
 
