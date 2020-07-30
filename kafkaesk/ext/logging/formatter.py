@@ -47,10 +47,8 @@ class PydanticFormatter(logging.Formatter):
 
     def _format_extra_logs(self, record: PydanticLogRecord) -> Dict[str, Any]:
         extra_logs: Dict[str, Any] = {}
-        if getattr(record, "_pydantic_data", None) is None:
-            return extra_logs
 
-        for log in record._pydantic_data:
+        for log in record.pydantic_data:
             extra_logs.update(log.dict(exclude_none=True, exclude={"_is_log_model",}))
 
         return extra_logs
