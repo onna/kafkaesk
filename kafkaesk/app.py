@@ -200,6 +200,21 @@ class Application:
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
 
+        self._event_handlers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
+
+    def on(self, name: str, handler: Callable[[], Awaitable[None]]) -> None:
+        if name not in self._event_handlers:
+            self._event_handlers[name] = []
+
+        self._event_handlers[name].append(handler)
+
+    async def _call_event_handlers(self, name: str) -> None:
+        handlers = self._event_handlers.get(name)
+
+        if handlers is not None:
+            for handler in handlers:
+                await handler()
+
     @property
     def topic_mng(self) -> KafkaTopicManager:
         if self._topic_mng is None:
@@ -330,6 +345,8 @@ class Application:
         self._intialized = True
 
     async def finalize(self) -> None:
+        await self._call_event_handlers("finalize")
+
         if self._producer is not None:
             await self._producer.flush()
             await self._producer.stop()
