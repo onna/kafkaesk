@@ -2,7 +2,6 @@ from .formatter import PydanticLogModel
 from .record import PydanticLogRecord
 from pydantic import BaseModel
 from typing import IO
-from typing import List
 from typing import Optional
 from typing import Tuple
 
