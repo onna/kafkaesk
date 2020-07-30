@@ -43,8 +43,7 @@ async def test_factory_adds_pydantic_models() -> None:
         sinfo=None,
     )
 
-    assert hasattr(record, "_pydantic_data")
-    assert len(record._pydantic_data) == 1
+    assert len(record.pydantic_data) == 1
     assert len(record.args) == 0
 
 
@@ -82,4 +81,4 @@ async def test_factory_formats_msg_and_adds_pydantic_model() -> None:
     )
 
     assert record.getMessage() == "Test Log extra"
-    assert len(record._pydantic_data) == 1
+    assert len(record.pydantic_data) == 1
