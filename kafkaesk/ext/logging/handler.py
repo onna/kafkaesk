@@ -55,7 +55,7 @@ class KafkaeskQueue:
                 stream, message = await asyncio.wait_for(self._queue.get(), 1)
                 await self._publish(stream, message)
 
-            except asyncio.exceptions.TimeoutError:
+            except asyncio.TimeoutError:
                 continue
 
             except asyncio.CancelledError:
