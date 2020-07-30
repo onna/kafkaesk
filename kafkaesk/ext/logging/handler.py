@@ -2,6 +2,7 @@ from .formatter import PydanticLogModel
 from .record import PydanticLogRecord
 from pydantic import BaseModel
 from typing import IO
+from typing import List
 from typing import Optional
 from typing import Tuple
 
@@ -28,34 +29,61 @@ class PydanticStreamHandler(logging.StreamHandler):
         return message
 
 
-class LogQueue:
-    def __init__(self, app: kafkaesk.Application):
+class KafkaeskQueue:
+    def __init__(
+        self, app: kafkaesk.app.Application, loop: asyncio.AbstractEventLoop = None,
+    ):
         self._queue: asyncio.Queue[Tuple[str, BaseModel]] = asyncio.Queue()
         self._app = app
 
-    async def run(self) -> None:
+        self._loop = loop or asyncio.get_event_loop()
+        self._task: Optional[asyncio.Task] = None
+
+    def start(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = self._loop.create_task(self._run())
+
+    def close(self) -> None:
+        if not self._loop.is_closed() and self._task is not None:
+            if not self._task.done() and not self._task.cancelled():
+                self._task.cancel()
+
+    async def _run(self) -> None:
         while True:
+            try:
+                stream, message = await asyncio.wait_for(self._queue.get(), 1)
+                await self._publish(stream, message)
+
+            except asyncio.exceptions.TimeoutError:
+                continue
+
+            except asyncio.CancelledError:
+                await self.flush()
+                return
+
+    async def flush(self) -> None:
+        while not self._queue.empty():
             stream, message = await self._queue.get()
+            await self._publish(stream, message)
+
+    async def _publish(self, stream: str, message: BaseModel) -> None:
+        if self._app._intialized:
             try:
                 await self._app.publish(stream, message)
-            except Exception as err:
-                print(err)
-            finally:
-                self._queue.task_done()
+            except kafkaesk.exceptions.UnregisteredSchemaException:
+                self._print_to_stderr(message, "Log schema is not registered")
+            # TODO: Handle other Kafak errors that may be raised
+        else:
+            self._print_to_stderr(message, "Kafkaesk application is not initialized")
+
+    def _print_to_stderr(self, message: BaseModel, error: str) -> None:
+        sys.stderr.write(f"Error sending log to Kafak: \n{error}\nMessage: {message.json()}")
 
     def put_nowait(self, stream: str, message: PydanticLogModel) -> None:
         self._queue.put_nowait((stream, message))
 
 
 class PydanticKafkaeskHandler(logging.Handler):
-    @property
-    def _queue_initialized(self) -> bool:
-        if self._queue is not None and self._queue_task is not None:
-            if not self._queue_task.done():
-                return True
-
-        return False
-
     def __init__(
         self, app: kafkaesk.Application, stream: str, loop: asyncio.AbstractEventLoop = None
     ):
@@ -63,8 +91,9 @@ class PydanticKafkaeskHandler(logging.Handler):
         self.stream = stream
         self.loop = loop
 
-        self._queue: Optional[LogQueue] = None
-        self._queue_task: Optional[asyncio.Future] = None
+        self._queue = KafkaeskQueue(self.app, self.loop)
+        self._queue.start()
+
         self._initialize_model()
 
         super().__init__()
@@ -75,13 +104,7 @@ class PydanticKafkaeskHandler(logging.Handler):
         except kafkaesk.app.SchemaConflictException:
             pass
 
-    def _initialize_queue(self) -> None:
-        self._queue = LogQueue(self.app)
-        self._queue_task = asyncio.ensure_future(self._queue.run(), loop=self.loop)
-
     def emit(self, record: PydanticLogRecord) -> None:  # type: ignore
-        if not self._queue_initialized:
-            self._initialize_queue()
         try:
             message = self.format(record)
             if not isinstance(message, BaseModel):
@@ -101,11 +124,7 @@ class PydanticKafkaeskHandler(logging.Handler):
         self.acquire()
         try:
             super().close()
-            if self._queue is not None and self._queue_task is not None:
-                if not self._queue_task.done():
-                    try:
-                        self._queue_task.cancel()
-                    except RuntimeError:
-                        pass
+            if self._queue is not None:
+                self._queue.close()
         finally:
             self.release()
