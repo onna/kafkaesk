@@ -121,10 +121,14 @@ class TestPydanticKafkaeskHandler:
 
 class TestKafkaeskQueue:
     @pytest.fixture(scope="function")
-    async def queue(self, app):
+    async def queue(self, request, app):
+
+        max_queue = 10000
+        for marker in request.node.iter_markers("with_max_queue"):
+            max_queue = marker.args[0]
 
         app.schema("PydanticLogModel")(PydanticLogModel)
-        q = KafkaeskQueue(app)
+        q = KafkaeskQueue(app, max_queue=max_queue)
 
         return q
 
@@ -190,3 +194,11 @@ class TestKafkaeskQueue:
 
         _, err = capsys.readouterr()
         assert "Kafkaesk application is not initialized" in err
+
+    @pytest.mark.with_max_queue(1)
+    async def test_queue_max_size(self, app, queue):
+
+        queue.put_nowait("log.test", PydanticLogModel())
+
+        with pytest.raises(asyncio.QueueFull):
+            queue.put_nowait("log.test", PydanticLogModel())

@@ -30,9 +30,12 @@ class PydanticStreamHandler(logging.StreamHandler):
 
 class KafkaeskQueue:
     def __init__(
-        self, app: kafkaesk.app.Application, loop: asyncio.AbstractEventLoop = None,
+        self,
+        app: kafkaesk.app.Application,
+        loop: asyncio.AbstractEventLoop = None,
+        max_queue: int = 10000,
     ):
-        self._queue: asyncio.Queue[Tuple[str, BaseModel]] = asyncio.Queue()
+        self._queue: asyncio.Queue[Tuple[str, BaseModel]] = asyncio.Queue(maxsize=max_queue)
         self._app = app
 
         self._app.on("finalize", self.flush)
