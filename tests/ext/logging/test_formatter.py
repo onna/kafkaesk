@@ -1,4 +1,3 @@
-from kafkaesk.ext.logging.formatter import BaseLogFormat
 from kafkaesk.ext.logging.formatter import PydanticFormatter
 from kafkaesk.ext.logging.formatter import PydanticLogModel
 from kafkaesk.ext.logging.record import factory
