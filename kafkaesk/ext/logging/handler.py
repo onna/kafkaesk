@@ -30,27 +30,33 @@ class PydanticStreamHandler(logging.StreamHandler):
 
 class KafkaeskQueue:
     def __init__(
-        self,
-        app: kafkaesk.app.Application,
-        loop: asyncio.AbstractEventLoop = None,
-        max_queue: int = 10000,
+        self, app: kafkaesk.app.Application, max_queue: int = 10000,
     ):
         self._queue: asyncio.Queue[Tuple[str, BaseModel]] = asyncio.Queue(maxsize=max_queue)
         self._app = app
 
         self._app.on("finalize", self.flush)
 
-        self._loop = loop or asyncio.get_event_loop()
         self._task: Optional[asyncio.Task] = None
 
     def start(self) -> None:
         if self._task is None or self._task.done():
-            self._task = self._loop.create_task(self._run())
+            self._task = asyncio.get_event_loop().create_task(self._run())
 
     def close(self) -> None:
-        if not self._loop.is_closed() and self._task is not None:
+        if self._task is not None and not self._task._loop.is_closed():
             if not self._task.done() and not self._task.cancelled():
                 self._task.cancel()
+
+    @property
+    def running(self) -> bool:
+        if self._task is None:
+            return False
+
+        if self._task.done():
+            return False
+
+        return True
 
     async def _run(self) -> None:
         while True:
@@ -88,15 +94,11 @@ class KafkaeskQueue:
 
 
 class PydanticKafkaeskHandler(logging.Handler):
-    def __init__(
-        self, app: kafkaesk.Application, stream: str, loop: asyncio.AbstractEventLoop = None
-    ):
+    def __init__(self, app: kafkaesk.Application, stream: str):
         self.app = app
         self.stream = stream
-        self.loop = loop
 
-        self._queue = KafkaeskQueue(self.app, self.loop)
-        self._queue.start()
+        self._queue = KafkaeskQueue(self.app)
 
         self._initialize_model()
 
@@ -109,6 +111,9 @@ class PydanticKafkaeskHandler(logging.Handler):
             pass
 
     def emit(self, record: PydanticLogRecord) -> None:  # type: ignore
+        if not self._queue.running:
+            self._queue.start()
+
         try:
             message = self.format(record)
             if not isinstance(message, BaseModel):

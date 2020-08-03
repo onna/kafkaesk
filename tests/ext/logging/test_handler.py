@@ -38,8 +38,8 @@ def stream_handler(logger):
 
 
 @pytest.fixture(scope="function")
-def kafakesk_handler(app, logger, event_loop):
-    handler = PydanticKafkaeskHandler(app, "log.test", loop=event_loop)
+def kafakesk_handler(app, logger):
+    handler = PydanticKafkaeskHandler(app, "log.test")
     handler.setFormatter(PydanticFormatter())
     logger.addHandler(handler)
 
@@ -132,7 +132,7 @@ class TestKafkaeskQueue:
 
         return q
 
-    async def test_queue(self, app, queue, event_loop):
+    async def test_queue(self, app, queue):
         consumed = []
 
         @app.subscribe("log.test", group="test_group")

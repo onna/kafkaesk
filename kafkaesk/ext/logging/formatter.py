@@ -8,6 +8,7 @@ from typing import Type
 
 import logging
 import pydantic
+import time
 
 
 class BaseLogFormat(pydantic.BaseModel):
@@ -27,6 +28,9 @@ class PydanticLogModel(pydantic.BaseModel):
 
 
 class PydanticFormatter(logging.Formatter):
+
+    converter = time.gmtime
+
     def __init__(
         self,
         model: Type[pydantic.BaseModel] = BaseLogFormat,
