@@ -3,7 +3,6 @@ from .record import PydanticLogRecord
 from pydantic import BaseModel
 from typing import IO
 from typing import Optional
-from typing import Tuple
 
 import asyncio
 import kafkaesk
@@ -32,7 +31,9 @@ class KafkaeskQueue:
     def __init__(
         self, app: kafkaesk.app.Application, max_queue: int = 10000,
     ):
-        self._queue: asyncio.Queue[Tuple[str, BaseModel]] = asyncio.Queue(maxsize=max_queue)
+        self._queue: Optional[asyncio.Queue] = None
+        self._queue_size = max_queue
+
         self._app = app
 
         self._app.on("finalize", self.flush)
@@ -40,6 +41,9 @@ class KafkaeskQueue:
         self._task: Optional[asyncio.Task] = None
 
     def start(self) -> None:
+        if self._queue is None:
+            self._queue = asyncio.Queue(maxsize=self._queue_size)
+
         if self._task is None or self._task.done():
             self._task = asyncio.get_event_loop().create_task(self._run())
 
@@ -59,6 +63,9 @@ class KafkaeskQueue:
         return True
 
     async def _run(self) -> None:
+        if self._queue is None:
+            raise RuntimeError("Queue must be started before workers")
+
         while True:
             try:
                 stream, message = await asyncio.wait_for(self._queue.get(), 1)
@@ -72,9 +79,10 @@ class KafkaeskQueue:
                 return
 
     async def flush(self) -> None:
-        while not self._queue.empty():
-            stream, message = await self._queue.get()
-            await self._publish(stream, message)
+        if self._queue is not None:
+            while not self._queue.empty():
+                stream, message = await self._queue.get()
+                await self._publish(stream, message)
 
     async def _publish(self, stream: str, message: BaseModel) -> None:
         if self._app._intialized:
@@ -90,7 +98,8 @@ class KafkaeskQueue:
         sys.stderr.write(f"Error sending log to Kafak: \n{error}\nMessage: {message.json()}")
 
     def put_nowait(self, stream: str, message: PydanticLogModel) -> None:
-        self._queue.put_nowait((stream, message))
+        if self._queue is not None:
+            self._queue.put_nowait((stream, message))
 
 
 class PydanticKafkaeskHandler(logging.Handler):

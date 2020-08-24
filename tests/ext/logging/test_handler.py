@@ -154,6 +154,7 @@ class TestKafkaeskQueue:
     async def test_queue_flush(self, app, queue, log_consumer):
 
         async with app:
+            queue.start()
             for i in range(10):
                 queue.put_nowait("log.test", PydanticLogModel(count=i))
 
@@ -198,6 +199,7 @@ class TestKafkaeskQueue:
     @pytest.mark.with_max_queue(1)
     async def test_queue_max_size(self, app, queue):
 
+        queue.start()
         queue.put_nowait("log.test", PydanticLogModel())
 
         with pytest.raises(asyncio.QueueFull):
