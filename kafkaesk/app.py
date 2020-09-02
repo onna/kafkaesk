@@ -28,6 +28,7 @@ import orjson
 import pydantic
 import signal
 
+
 logger = logging.getLogger("kafkaesk")
 
 
@@ -186,6 +187,7 @@ class Application:
         kafka_settings: Optional[Dict[str, Any]] = None,
         replication_factor: Optional[int] = None,
         kafka_api_version: str = "auto",
+        middlewares: Optional[List[Callable]] = None
     ):
         self._subscriptions: List[Subscription] = []
         self._schemas: Dict[str, SchemaRegistration] = {}
@@ -200,6 +202,7 @@ class Application:
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
 
+        self._middlewares = middlewares or []
         self._event_handlers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
 
     def on(self, name: str, handler: Callable[[], Awaitable[None]]) -> None:
@@ -236,6 +239,7 @@ class Application:
         topic_prefix: Optional[str] = None,
         kafka_settings: Optional[Dict[str, Any]] = None,
         api_version: Optional[str] = None,
+        middlewares: Optional[List[Callable]] = None,
         replication_factor: Optional[int] = None,
     ) -> None:
         if kafka_servers is not None:
@@ -248,6 +252,8 @@ class Application:
             self._kafka_api_version = api_version
         if replication_factor is not None:
             self._replication_factor = replication_factor
+        if middlewares is not None:
+            self._middlewares.extend(middlewares)
 
     async def publish(
         self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
@@ -284,7 +290,21 @@ class Application:
 
     def subscribe(self, stream_id: str, group: str,) -> Callable:
         def inner(func: Callable) -> Callable:
-            subscription = Subscription(stream_id, func, group or func.__name__)
+            name = func.__name__
+            func_sig = inspect.signature(func)
+            first_param = list(func_sig.parameters.items())[0][1]
+
+            for middleware in self._middlewares:
+                params = []
+                sig = inspect.signature(middleware)
+                original = [k for k in sig.parameters.items()]
+                modified_param = original[0][1].replace(annotation=first_param.annotation)
+                params.append(modified_param)
+                params += [k[1] for k in original[1:]]
+                middleware.__signature__ = sig.replace(parameters=params)
+                func = partial(middleware, handler=func, stream_id=stream_id)
+
+            subscription = Subscription(stream_id, func, group or name)
             self._subscriptions.append(subscription)
             return func
 

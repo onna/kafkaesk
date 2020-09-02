@@ -1,4 +1,6 @@
 import pytest
+import kafkaesk
+
 
 pytestmark = pytest.mark.asyncio
 

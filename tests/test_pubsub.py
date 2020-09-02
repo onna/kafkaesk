@@ -5,6 +5,8 @@ import asyncio
 import pydantic
 import pytest
 import uuid
+import time
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -99,6 +101,46 @@ async def test_subscribe_without_group(app):
         @app.subscribe("foo.bar")
         async def consume(data: Foo):
             ...
+
+
+async def test_middlewares(app):
+    times = []
+
+    async def do_nothing(data, handler, stream_id):
+        """this mw does nothing but move the message to the next"""
+        return await handler(data)
+
+    async def time_it(data, handler, stream_id):
+        """return value could be None"""
+        start = time.perf_counter_ns()
+        ret = await handler(data)
+        total = time.perf_counter_ns() - start
+        times.append((stream_id, total))
+        return ret
+
+    app.configure(middlewares=[do_nothing, time_it])
+
+    @app.schema("Foo", version=1, streams=["foo.bar"])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar", group="test_group")
+    async def consume(data: Foo):
+        await asyncio.sleep(float(data.bar))
+
+
+    async with app:
+        fut = asyncio.create_task(app.consume_for(4, seconds=5))
+        await asyncio.sleep(0.2)
+
+        await app.publish("foo.bar", Foo(bar="1"))
+        await app.publish("foo.bar", Foo(bar="1"))
+        await app.publish("foo.bar", Foo(bar="1"))
+
+        await app.flush()
+        await fut
+
+    assert app
 
 
 async def test_multiple_subscribers_different_models(app):
