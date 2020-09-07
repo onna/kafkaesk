@@ -2,6 +2,7 @@ from .exceptions import SchemaConflictException
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .exceptions import UnregisteredSchemaException
+from .metrics.factories import Factory
 from .kafka import KafkaTopicManager
 from .utils import resolve_dotted_name
 from functools import partial
@@ -95,6 +96,7 @@ class SubscriptionConsumer:
         self._app = app
         self._subscription = subscription
         self._event_handlers = event_handlers or {}
+        self.consumer_elapsed = app.metrics.histogram("elapsed", labels={"consumer": subscription.stream_id})
 
     async def emit(self, name: str, *args: Any, **kwargs: Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -155,7 +157,8 @@ class SubscriptionConsumer:
                             kwargs["schema"] = msg_data["schema"]
                         elif key == "record":
                             kwargs["record"] = record
-                    await self._subscription.func(**kwargs)
+                    with self.consumer_elapsed:
+                        await self._subscription.func(**kwargs)
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {record}", exc_info=True)
@@ -195,6 +198,8 @@ class Application:
         self._intialized = False
         self._locks: Dict[str, asyncio.Lock] = {}
 
+        self.metrics = Factory("dummy")
+        self.published_counter = self.metrics.counter("published")
         self._kafka_api_version = kafka_api_version
         self._topic_prefix = topic_prefix
         self._replication_factor = replication_factor
@@ -272,8 +277,10 @@ class Application:
                 )
 
         logger.info(f"Sending kafka msg: {stream_id}")
+        self.published_counter.inc()
 
         producer = await self._get_producer()
+
         return await producer.send(
             topic_id, value=orjson.dumps({"schema": schema_key, "data": data_}), key=key
         )
