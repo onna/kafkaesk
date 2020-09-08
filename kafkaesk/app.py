@@ -3,6 +3,8 @@ from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
+from .metrics import CONSUMED_MESSAGE_TIME
+from .metrics import PUBLISHED_MESSAGES
 from .utils import resolve_dotted_name
 from functools import partial
 from pydantic import BaseModel
@@ -155,7 +157,11 @@ class SubscriptionConsumer:
                             kwargs["schema"] = msg_data["schema"]
                         elif key == "record":
                             kwargs["record"] = record
-                    await self._subscription.func(**kwargs)
+
+                    with CONSUMED_MESSAGE_TIME.labels(
+                        stream_id=self._subscription.stream_id
+                    ).time():
+                        await self._subscription.func(**kwargs)
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {record}", exc_info=True)
@@ -274,6 +280,8 @@ class Application:
         logger.info(f"Sending kafka msg: {stream_id}")
 
         producer = await self._get_producer()
+
+        PUBLISHED_MESSAGES.inc()
         return await producer.send(
             topic_id, value=orjson.dumps({"schema": schema_key, "data": data_}), key=key
         )

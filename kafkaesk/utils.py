@@ -60,3 +60,46 @@ def resolve_dotted_name(name: str) -> Any:
             found = getattr(found, n)
 
     return found
+
+
+class NoopClient:
+    """Empty implementation of all used `prometheus_client` used methods"""
+
+    def __init__(self, instance: str) -> None:
+        self.instance = instance
+
+    def emit(self, *args: str, **kwargs: str) -> None:
+        """We can extend this for testing purposes capturing metrics calls"""
+
+    @staticmethod
+    def Counter(*args: str, **kwargs: str) -> "NoopClient":
+        return NoopClient("counter")
+
+    @staticmethod
+    def Gauge(*args: str, **kwargs: str) -> "NoopClient":
+        return NoopClient("gauge")
+
+    @staticmethod
+    def Histogram(*args: str, **kwargs: str) -> "NoopClient":
+        return NoopClient("histogram")
+
+    def inc(self, *args: str, **kwargs: str) -> None:
+        self.emit("inc", *args, **kwargs)
+
+    def time(self, *args: str, **kwargs: str) -> "NoopClient":
+        return NoopClient(f"{self.instance}:time")
+
+    def dec(self, *args: str, **kwargs: str) -> None:
+        self.emit("dec", *args, **kwargs)
+
+    def observe(self, *args: str, **kwargs: str) -> None:
+        self.emit("observe", *args, **kwargs)
+
+    def __enter__(self) -> None:
+        self.emit("enter")
+
+    def __exit__(self, *args: str) -> None:
+        self.emit("exit", *args)
+
+    def labels(self, *args: str, **kwargs: str) -> "NoopClient":
+        return NoopClient(f"{self.instance}:labels({args}, {kwargs})")
