@@ -186,12 +186,13 @@ class SubscriptionConsumer:
                         group_id=self._subscription.group,
                     ).time():
                         await self._subscription.func(**kwargs)
-                        # No error metric
-                        CONSUMED_MESSAGES.labels(
-                            stream_id=record.topic,
-                            partition=record.partition,
-                            group_id=self._subscription.group,
-                        ).inc()
+
+                    # No error metric
+                    CONSUMED_MESSAGES.labels(
+                        stream_id=record.topic,
+                        partition=record.partition,
+                        group_id=self._subscription.group,
+                    ).inc()
 
                     # Calculate the time since the message is send until is successfully consumed
                     lead_time = time.time() - record.timestamp / 1000  # type: ignore
