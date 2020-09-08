@@ -172,6 +172,14 @@ class SubscriptionConsumer:
                     stream_id=record.topic,
                     partition=record.partition,
                 ).set(record.offset)
+                # Calculate the time since the message is send until is successfully consumed
+                lead_time = time.time() - record.timestamp / 1000  # type: ignore
+                MESSAGE_LEAD_TIME.labels(
+                    stream_id=record.topic,
+                    partition=record.partition,
+                    group_id=self._subscription.group,
+                ).observe(lead_time)
+
                 try:
                     logger.info(f"Handling msg: {record}")
                     msg_data = orjson.loads(record.value)
@@ -197,14 +205,6 @@ class SubscriptionConsumer:
                         partition=record.partition,
                         group_id=self._subscription.group,
                     ).inc()
-
-                    # Calculate the time since the message is send until is successfully consumed
-                    lead_time = time.time() - record.timestamp / 1000  # type: ignore
-                    MESSAGE_LEAD_TIME.labels(
-                        stream_id=record.topic,
-                        partition=record.partition,
-                        group_id=self._subscription.group,
-                    ).observe(lead_time)
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {record}", exc_info=True)
