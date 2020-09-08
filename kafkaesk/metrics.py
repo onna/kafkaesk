@@ -1,5 +1,7 @@
 import prometheus_client as client
 
+NOERROR = "none"
+
 PUBLISHED_MESSAGES = client.Counter(
     "published_messages", "Number of published messages", ["stream_id", "partition", "error"]
 )

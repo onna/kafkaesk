@@ -7,6 +7,7 @@ from .metrics import CONSUMED_MESSAGE_TIME
 from .metrics import CONSUMED_MESSAGES
 from .metrics import CONSUMER_TOPIC_OFFSET
 from .metrics import MESSAGE_LEAD_TIME
+from .metrics import NOERROR
 from .metrics import PRODUCER_TOPIC_OFFSET
 from .metrics import PUBLISHED_MESSAGES
 from .utils import resolve_dotted_name
@@ -97,10 +98,12 @@ def _published_callback(topic: str, fut: Future) -> None:
     # Record the metrics
     exception = fut.exception()
     if exception:
-        PUBLISHED_MESSAGES.labels(stream_id=topic, error=str(exception.__class__)).inc()
+        error = str(exception.__class__.__name__)
+    else:
+        error = NOERROR
 
     metadata = fut.result()
-    PUBLISHED_MESSAGES.labels(stream_id=topic, partition=metadata.partition).inc()
+    PUBLISHED_MESSAGES.labels(stream_id=topic, partition=metadata.partition, error=error).inc()
     PRODUCER_TOPIC_OFFSET.labels(stream_id=topic, partition=metadata.partition).set(metadata.offset)
 
 
@@ -190,6 +193,7 @@ class SubscriptionConsumer:
                     # No error metric
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,
+                        error=NOERROR,
                         partition=record.partition,
                         group_id=self._subscription.group,
                     ).inc()
@@ -208,7 +212,7 @@ class SubscriptionConsumer:
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,
                         partition=record.partition,
-                        error="unhandled",
+                        error="UnhandledMessage",
                         group_id=self._subscription.group,
                     ).inc()
 
