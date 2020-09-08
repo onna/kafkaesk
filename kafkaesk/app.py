@@ -3,7 +3,15 @@ from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
+from .metrics import CONSUMED_MESSAGE_TIME
+from .metrics import CONSUMED_MESSAGES
+from .metrics import CONSUMER_TOPIC_OFFSET
+from .metrics import MESSAGE_LEAD_TIME
+from .metrics import NOERROR
+from .metrics import PRODUCER_TOPIC_OFFSET
+from .metrics import PUBLISHED_MESSAGES
 from .utils import resolve_dotted_name
+from asyncio.futures import Future
 from functools import partial
 from pydantic import BaseModel
 from pydantic import ValidationError
@@ -27,6 +35,7 @@ import logging
 import orjson
 import pydantic
 import signal
+import time
 
 logger = logging.getLogger("kafkaesk")
 
@@ -83,6 +92,19 @@ def _record_msg_handler(
     record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
 ) -> aiokafka.structs.ConsumerRecord:
     return record
+
+
+def _published_callback(topic: str, fut: Future) -> None:
+    # Record the metrics
+    exception = fut.exception()
+    if exception:
+        error = str(exception.__class__.__name__)
+    else:
+        error = NOERROR
+
+    metadata = fut.result()
+    PUBLISHED_MESSAGES.labels(stream_id=topic, partition=metadata.partition, error=error).inc()
+    PRODUCER_TOPIC_OFFSET.labels(stream_id=topic, partition=metadata.partition).set(metadata.offset)
 
 
 class SubscriptionConsumer:
@@ -145,6 +167,19 @@ class SubscriptionConsumer:
         try:
             # Consume messages
             async for record in consumer:
+                CONSUMER_TOPIC_OFFSET.labels(
+                    group_id=self._subscription.group,
+                    stream_id=record.topic,
+                    partition=record.partition,
+                ).set(record.offset)
+                # Calculate the time since the message is send until is successfully consumed
+                lead_time = time.time() - record.timestamp / 1000  # type: ignore
+                MESSAGE_LEAD_TIME.labels(
+                    stream_id=record.topic,
+                    partition=record.partition,
+                    group_id=self._subscription.group,
+                ).observe(lead_time)
+
                 try:
                     logger.info(f"Handling msg: {record}")
                     msg_data = orjson.loads(record.value)
@@ -155,10 +190,32 @@ class SubscriptionConsumer:
                             kwargs["schema"] = msg_data["schema"]
                         elif key == "record":
                             kwargs["record"] = record
-                    await self._subscription.func(**kwargs)
+
+                    with CONSUMED_MESSAGE_TIME.labels(
+                        stream_id=record.topic,
+                        partition=record.partition,
+                        group_id=self._subscription.group,
+                    ).time():
+                        await self._subscription.func(**kwargs)
+
+                    # No error metric
+                    CONSUMED_MESSAGES.labels(
+                        stream_id=record.topic,
+                        error=NOERROR,
+                        partition=record.partition,
+                        group_id=self._subscription.group,
+                    ).inc()
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {record}", exc_info=True)
+                    # We increase the error counter
+                    CONSUMED_MESSAGES.labels(
+                        stream_id=record.topic,
+                        partition=record.partition,
+                        error="UnhandledMessage",
+                        group_id=self._subscription.group,
+                    ).inc()
+
                 finally:
                     await self.emit("message", record=record)
         finally:
@@ -274,9 +331,13 @@ class Application:
         logger.info(f"Sending kafka msg: {stream_id}")
 
         producer = await self._get_producer()
-        return await producer.send(
+
+        fut = await producer.send(
             topic_id, value=orjson.dumps({"schema": schema_key, "data": data_}), key=key
         )
+
+        fut.add_done_callback(partial(_published_callback, topic_id))  # type: ignore
+        return fut
 
     async def flush(self) -> None:
         if self._producer is not None:
@@ -439,6 +500,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
             self.group_id, partitions=assigned
         )
         logger.info(f"Partitions assigned: {assigned}")
+
         for tp in assigned:
             if tp not in starting_pos or starting_pos[tp].offset == -1:
                 # detect if we've never consumed from this topic before
