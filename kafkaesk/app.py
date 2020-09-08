@@ -185,22 +185,13 @@ class SubscriptionConsumer:
                         partition=record.partition,
                         group_id=self._subscription.group,
                     ).time():
-                        try:
-                            await self._subscription.func(**kwargs)
-                            # No error metric
-                            CONSUMED_MESSAGES.labels(
-                                stream_id=record.topic,
-                                partition=record.partition,
-                                group_id=self._subscription.group,
-                            ).inc()
-                        except Exception as exc:
-                            # We increase the error counter
-                            CONSUMED_MESSAGES.labels(
-                                stream_id=record.topic,
-                                partition=record.partition,
-                                error=str(exc.__class__),
-                                group_id=self._subscription.group,
-                            ).inc()
+                        await self._subscription.func(**kwargs)
+                        # No error metric
+                        CONSUMED_MESSAGES.labels(
+                            stream_id=record.topic,
+                            partition=record.partition,
+                            group_id=self._subscription.group,
+                        ).inc()
 
                     # Calculate the time since the message is send until is successfully consumed
                     lead_time = time.time() - record.timestamp / 1000  # type: ignore
@@ -212,6 +203,14 @@ class SubscriptionConsumer:
                 except UnhandledMessage:
                     # how should we handle this? Right now, fail hard
                     logger.warning(f"Could not process msg: {record}", exc_info=True)
+                    # We increase the error counter
+                    CONSUMED_MESSAGES.labels(
+                        stream_id=record.topic,
+                        partition=record.partition,
+                        error="unhandled",
+                        group_id=self._subscription.group,
+                    ).inc()
+
                 finally:
                     await self.emit("message", record=record)
         finally:
