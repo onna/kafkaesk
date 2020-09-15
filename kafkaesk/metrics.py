@@ -3,7 +3,9 @@ import prometheus_client as client
 NOERROR = "none"
 
 PUBLISHED_MESSAGES = client.Counter(
-    "kafkaesk_published_messages", "Number of published messages", ["stream_id", "partition", "error"]
+    "kafkaesk_published_messages",
+    "Number of published messages",
+    ["stream_id", "partition", "error"],
 )
 
 
@@ -20,7 +22,9 @@ CONSUMED_MESSAGE_TIME = client.Histogram(
 )
 
 PRODUCER_TOPIC_OFFSET = client.Gauge(
-    "kafkaesk_produced_topic_offset", "Offset for produced messages a the topic", ["stream_id", "partition"],
+    "kafkaesk_produced_topic_offset",
+    "Offset for produced messages a the topic",
+    ["stream_id", "partition"],
 )
 
 CONSUMER_TOPIC_OFFSET = client.Gauge(
