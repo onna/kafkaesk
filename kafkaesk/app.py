@@ -229,7 +229,67 @@ class SubscriptionConsumer:
                 logger.warning("Could not properly stop consumer", exc_info=True)
 
 
-class Application:
+class Router:
+    """
+    Application routing configuration.
+    """
+
+    def __init__(self) -> None:
+        self._subscriptions: List[Subscription] = []
+        self._schemas: Dict[str, SchemaRegistration] = {}
+        self._event_handlers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
+
+    @property
+    def subscriptions(self) -> List[Subscription]:
+        return self._subscriptions
+
+    @property
+    def schemas(self) -> Dict[str, SchemaRegistration]:
+        return self._schemas
+
+    @property
+    def event_handlers(self) -> Dict[str, List[Callable[[], Awaitable[None]]]]:
+        return self._event_handlers
+
+    def on(self, name: str, handler: Callable[[], Awaitable[None]]) -> None:
+        if name not in self._event_handlers:
+            self._event_handlers[name] = []
+
+        self._event_handlers[name].append(handler)
+
+    def subscribe(self, stream_id: str, group: str,) -> Callable:
+        def inner(func: Callable) -> Callable:
+            subscription = Subscription(stream_id, func, group or func.__name__)
+            self._subscriptions.append(subscription)
+            return func
+
+        return inner
+
+    def schema(
+        self,
+        _id: str,
+        *,
+        version: Optional[int] = None,
+        retention: Optional[int] = None,
+        streams: Optional[List[str]] = None,
+    ) -> Callable:
+        version = version or 1
+
+        def inner(cls: Type[BaseModel]) -> Type[BaseModel]:
+            key = f"{_id}:{version}"
+            reg = SchemaRegistration(
+                id=_id, version=version or 1, model=cls, retention=retention, streams=streams
+            )
+            if key in self._schemas:
+                raise SchemaConflictException(self._schemas[key], reg)
+            cls.__key__ = key  # type: ignore
+            self._schemas[key] = reg
+            return cls
+
+        return inner
+
+
+class Application(Router):
     """
     Application configuration
     """
@@ -244,8 +304,7 @@ class Application:
         replication_factor: Optional[int] = None,
         kafka_api_version: str = "auto",
     ):
-        self._subscriptions: List[Subscription] = []
-        self._schemas: Dict[str, SchemaRegistration] = {}
+        super().__init__()
         self._kafka_servers = kafka_servers
         self._kafka_settings = kafka_settings
         self._producer = None
@@ -257,13 +316,10 @@ class Application:
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
 
-        self._event_handlers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
-
-    def on(self, name: str, handler: Callable[[], Awaitable[None]]) -> None:
-        if name not in self._event_handlers:
-            self._event_handlers[name] = []
-
-        self._event_handlers[name].append(handler)
+    def mount(self, router: Router) -> None:
+        self._subscriptions.extend(router.subscriptions)
+        self._schemas.update(router.schemas)
+        self._event_handlers.update(router.event_handlers)
 
     async def _call_event_handlers(self, name: str) -> None:
         handlers = self._event_handlers.get(name)
@@ -343,40 +399,9 @@ class Application:
         if self._producer is not None:
             await self._producer.flush()
 
-    def subscribe(self, stream_id: str, group: str,) -> Callable:
-        def inner(func: Callable) -> Callable:
-            subscription = Subscription(stream_id, func, group or func.__name__)
-            self._subscriptions.append(subscription)
-            return func
-
-        return inner
-
     def get_schema_reg(self, model_or_def: BaseModel) -> SchemaRegistration:
         key = model_or_def.__key__  # type: ignore
         return self._schemas[key]
-
-    def schema(
-        self,
-        _id: str,
-        *,
-        version: Optional[int] = None,
-        retention: Optional[int] = None,
-        streams: Optional[List[str]] = None,
-    ) -> Callable:
-        version = version or 1
-
-        def inner(cls: Type[BaseModel]) -> Type[BaseModel]:
-            key = f"{_id}:{version}"
-            reg = SchemaRegistration(
-                id=_id, version=version or 1, model=cls, retention=retention, streams=streams
-            )
-            if key in self._schemas:
-                raise SchemaConflictException(self._schemas[key], reg)
-            cls.__key__ = key  # type: ignore
-            self._schemas[key] = reg
-            return cls
-
-        return inner
 
     async def _get_producer(self) -> aiokafka.AIOKafkaProducer:
         if self._producer is None:

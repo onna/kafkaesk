@@ -56,6 +56,35 @@ async def get_messages(data: ContentMessage):
 ```
 
 
+## Avoiding global object
+
+If you do not want to have global application configuration, you can lazily configure
+the application and register schemas/subscribers separately.
+
+```python
+import kafkaesk
+from pydantic import BaseModel
+
+router = kafkaesk.Router()
+
+@router.schema("Content", version=1, retention=24 * 60 * 60)
+class ContentMessage(BaseModel):
+    foo: str
+
+
+@router.subscribe('content.*')
+async def get_messages(data: ContentMessage):
+    print(f"{data.foo}")
+
+
+if __name__ == '__main__':
+    app = kafkaesk.Application()
+    app.mount(router)
+    kafkaesk.run(app)
+
+```
+
+
 Optional consumer injected parameters:
 
 - schema: str
