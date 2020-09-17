@@ -26,7 +26,7 @@ async def test_data_binding(app):
         await app.consume_for(1, seconds=5)
 
     assert len(consumed) == 1
-    assert len(consumed[0]) == 3
+    assert len(consumed[0]) == 4
 
 
 async def test_consume_message(app):
