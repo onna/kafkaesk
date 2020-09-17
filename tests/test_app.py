@@ -1,3 +1,5 @@
+import kafkaesk
+import pydantic
 import pytest
 
 pytestmark = pytest.mark.asyncio
@@ -24,3 +26,21 @@ async def test_app_finalize_event(app):
     await app.finalize()
 
     assert tracker.called is True
+
+
+def test_mount_router(app):
+    router = kafkaesk.Router()
+
+    @router.schema("Foo", streams=["foo.bar"])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @router.subscribe("foo.bar", group="test_group")
+    async def consume(data: Foo, schema, record):
+        ...
+
+    app.mount(router)
+
+    assert app.subscriptions == router.subscriptions
+    assert app.schemas == router.schemas
+    assert app.event_handlers == router.event_handlers
