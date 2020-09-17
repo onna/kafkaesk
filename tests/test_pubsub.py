@@ -17,8 +17,8 @@ async def test_data_binding(app):
         bar: str
 
     @app.subscribe("foo.bar", group="test_group")
-    async def consume(data: Foo, schema, record):
-        consumed.append((data, schema, record))
+    async def consume(data: Foo, schema, record, app):
+        consumed.append((data, schema, record, app))
 
     async with app:
         await app.publish("foo.bar", Foo(bar="1"))

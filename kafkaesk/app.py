@@ -190,6 +190,8 @@ class SubscriptionConsumer:
                             kwargs["schema"] = msg_data["schema"]
                         elif key == "record":
                             kwargs["record"] = record
+                        elif key == "app":
+                            kwargs["app"] = self._app
 
                     with CONSUMED_MESSAGE_TIME.labels(
                         stream_id=record.topic,
