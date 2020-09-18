@@ -34,7 +34,19 @@ class AIOKafkaProducer:
         ...
 
 
+class AIOKafkaClient:
+    async def ready(self, node_id: str, *, group: Optional[str] = None) -> bool:
+        ...
+
+
+class GroupCoordinator:
+    coordinator_id: str
+
+
 class AIOKafkaConsumer:
+    _client: AIOKafkaClient
+    _coordinator: GroupCoordinator
+
     def __init__(
         self,
         bootstrap_servers: List[str],

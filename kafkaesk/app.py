@@ -122,7 +122,7 @@ class SubscriptionConsumer:
         self._event_handlers = event_handlers or {}
 
     @property
-    def consumer(self) -> aiokafka.AIOKafkaConsumer:
+    def consumer(self) -> Optional[aiokafka.AIOKafkaConsumer]:
         return self._consumer
 
     async def emit(self, name: str, *args: Any, **kwargs: Any) -> None:

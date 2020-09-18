@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .app import SchemaRegistration
-    from .app import Application
+    from .app import SubscriptionConsumer
 else:
-    SchemaRegistration = Application = None
+    SchemaRegistration = SubscriptionConsumer = None
 
 
 class JsonSchemaRequiredException(Exception):
@@ -44,6 +44,6 @@ class StopConsumer(Exception):
 
 
 class ConsumerUnhealthyException(Exception):
-    def __init__(self, app: Application, reason: str):
-        self.app = app
+    def __init__(self, subscriber_consumer: SubscriptionConsumer, reason: str):
+        self.subscriber_consumer = subscriber_consumer
         self.reason = reason
