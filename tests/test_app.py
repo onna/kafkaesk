@@ -1,4 +1,8 @@
-from unittest.mock import AsyncMock
+try:
+    from unittest.mock import AsyncMock
+except ImportError:
+    AsyncMock = None
+
 
 import kafkaesk
 import kafkaesk.exceptions
@@ -49,6 +53,7 @@ def test_mount_router(app):
     assert app.event_handlers == router.event_handlers
 
 
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check():
     app = kafkaesk.Application()
     subscription_consumer = AsyncMock()
@@ -57,6 +62,7 @@ async def test_consumer_health_check():
     await app.health_check()
 
 
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check_raises_exception():
     app = kafkaesk.Application()
     subscription_consumer = AsyncMock()

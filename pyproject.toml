@@ -33,7 +33,6 @@ isort = "^4.3.21"
 black = "^19.10b0"
 pytest-rerunfailures = "^9.0"
 pytest-cov = "^2.8.1"
-mock =  "~4.0.2"
 
 [tool.poetry.scripts]
 kafkaesk = 'kafkaesk.app:run'
