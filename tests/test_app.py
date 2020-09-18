@@ -1,4 +1,11 @@
+try:
+    from unittest.mock import AsyncMock
+except ImportError:
+    AsyncMock = None
+
+
 import kafkaesk
+import kafkaesk.exceptions
 import pydantic
 import pytest
 
@@ -44,3 +51,22 @@ def test_mount_router(app):
     assert app.subscriptions == router.subscriptions
     assert app.schemas == router.schemas
     assert app.event_handlers == router.event_handlers
+
+
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
+async def test_consumer_health_check():
+    app = kafkaesk.Application()
+    subscription_consumer = AsyncMock()
+    app._subscription_consumers.append(subscription_consumer)
+    subscription_consumer.consumer._client.ready.return_value = True
+    await app.health_check()
+
+
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
+async def test_consumer_health_check_raises_exception():
+    app = kafkaesk.Application()
+    subscription_consumer = AsyncMock()
+    app._subscription_consumers.append(subscription_consumer)
+    subscription_consumer.consumer._client.ready.return_value = False
+    with pytest.raises(kafkaesk.exceptions.ConsumerUnhealthyException):
+        await app.health_check()

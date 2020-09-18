@@ -1,3 +1,4 @@
+from .exceptions import ConsumerUnhealthyException
 from .exceptions import SchemaConflictException
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
@@ -108,6 +109,8 @@ def _published_callback(topic: str, fut: Future) -> None:
 
 
 class SubscriptionConsumer:
+    _consumer: Optional[aiokafka.AIOKafkaConsumer] = None
+
     def __init__(
         self,
         app: "Application",
@@ -117,6 +120,10 @@ class SubscriptionConsumer:
         self._app = app
         self._subscription = subscription
         self._event_handlers = event_handlers or {}
+
+    @property
+    def consumer(self) -> Optional[aiokafka.AIOKafkaConsumer]:
+        return self._consumer
 
     async def emit(self, name: str, *args: Any, **kwargs: Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -139,7 +146,7 @@ class SubscriptionConsumer:
             logger.info("Consumer stopped, exiting")
 
     async def __run(self) -> None:
-        consumer = aiokafka.AIOKafkaConsumer(
+        self._consumer = aiokafka.AIOKafkaConsumer(
             bootstrap_servers=cast(List[str], self._app._kafka_servers),
             loop=asyncio.get_event_loop(),
             group_id=self._subscription.group,
@@ -147,9 +154,11 @@ class SubscriptionConsumer:
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
-        listener = CustomConsumerRebalanceListener(consumer, self._app, self._subscription.group)
-        consumer.subscribe(pattern=pattern, listener=listener)
-        await consumer.start()
+        listener = CustomConsumerRebalanceListener(
+            self._consumer, self._app, self._subscription.group
+        )
+        self._consumer.subscribe(pattern=pattern, listener=listener)
+        await self._consumer.start()
 
         msg_handler = _raw_msg_handler
         sig = inspect.signature(self._subscription.func)
@@ -166,7 +175,7 @@ class SubscriptionConsumer:
         await self.emit("started", subscription_consumer=self)
         try:
             # Consume messages
-            async for record in consumer:
+            async for record in self._consumer:
                 CONSUMER_TOPIC_OFFSET.labels(
                     group_id=self._subscription.group,
                     stream_id=record.topic,
@@ -222,11 +231,11 @@ class SubscriptionConsumer:
                     await self.emit("message", record=record)
         finally:
             try:
-                await consumer.commit()
+                await self._consumer.commit()
             except Exception:
                 logger.info("Could not commit current offsets", exc_info=True)
             try:
-                await consumer.stop()
+                await self._consumer.stop()
             except Exception:
                 logger.warning("Could not properly stop consumer", exc_info=True)
 
@@ -317,11 +326,22 @@ class Application(Router):
         self._topic_prefix = topic_prefix
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
+        self._subscription_consumers: List[SubscriptionConsumer] = []
 
     def mount(self, router: Router) -> None:
         self._subscriptions.extend(router.subscriptions)
         self._schemas.update(router.schemas)
         self._event_handlers.update(router.event_handlers)
+
+    async def health_check(self) -> None:
+        for subscription_consumer in self._subscription_consumers:
+            if (
+                subscription_consumer.consumer is not None
+                and not await subscription_consumer.consumer._client.ready(
+                    subscription_consumer.consumer._coordinator.coordinator_id
+                )
+            ):
+                raise ConsumerUnhealthyException(subscription_consumer, "Consumer is not ready")
 
     async def _call_event_handlers(self, name: str) -> None:
         handlers = self._event_handlers.get(name)
@@ -416,6 +436,7 @@ class Application(Router):
         return self._producer
 
     async def initialize(self) -> None:
+        await self._call_event_handlers("initialize")
 
         for reg in self._schemas.values():
             # initialize topics for known streams
@@ -456,10 +477,10 @@ class Application(Router):
         await self.finalize()
 
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> None:
-        consumers = []
 
         consumed = 0
 
+        self._subscription_consumers = []
         for subscription in self._subscriptions:
 
             async def on_message(record: aiokafka.structs.ConsumerRecord) -> None:
@@ -471,10 +492,10 @@ class Application(Router):
             consumer = SubscriptionConsumer(
                 self, subscription, event_handlers={"message": [on_message]}
             )
-            consumers.append(consumer)
+            self._subscription_consumers.append(consumer)
 
         try:
-            futures = [asyncio.create_task(c()) for c in consumers]
+            futures = [asyncio.create_task(c()) for c in self._subscription_consumers]
             future = asyncio.gather(*futures)
             if seconds is not None:
                 future = asyncio.wait_for(future, seconds)
@@ -490,14 +511,15 @@ class Application(Router):
                     fut.cancel()
 
     async def consume_forever(self) -> None:
-        consumers = []
+        asyncio.create_task(self.health_check())
+        self._subscription_consumers = []
 
         for subscription in self._subscriptions:
             consumer = SubscriptionConsumer(self, subscription)
-            consumers.append(consumer)
+            self._subscription_consumers.append(consumer)
 
         try:
-            futures = [asyncio.create_task(c()) for c in consumers]
+            futures = [asyncio.create_task(c()) for c in self._subscription_consumers]
             await asyncio.gather(*futures)
         finally:
             for fut in futures:
