@@ -1,12 +1,9 @@
+from unittest.mock import AsyncMock
+
 import kafkaesk
 import kafkaesk.exceptions
 import pydantic
 import pytest
-
-try:
-    from unittest.mock import AsyncMock
-except ImportError:
-    from asyncmock import AsyncMock
 
 pytestmark = pytest.mark.asyncio
 
