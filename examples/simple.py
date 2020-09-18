@@ -2,6 +2,10 @@ from kafkaesk import Application
 from pydantic import BaseModel
 
 import asyncio
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 
 app = Application()
 

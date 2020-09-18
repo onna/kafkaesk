@@ -195,15 +195,12 @@ The stream handler is a very small wrapper around `logging.StreamHandler`, the s
 
 The kafkaesk handler has a few more bits going on in the background.  The handler has two required inputs, a `kafkaesk.app.Application` instance and a stream name.  Once initialized any logs emitted by the handler will be saved into an internal queue.  There is a worker task that handles pulling logs from the queue and writing those logs to the specified topic.
 
-# Features
+# TODO
 
 (or a todo here)
 
-- [x] worker
-- [ ] service to inspect stats
 - [ ] be able to handle manual commit use-case
 - [ ] be able to reject commit/abort message handling
-- [ ] prometheus
 
 # Naming things
 
