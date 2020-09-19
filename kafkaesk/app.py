@@ -14,6 +14,7 @@ from .metrics import PUBLISHED_MESSAGES
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
+from opentracing.scope_managers.contextvars import ContextVarsScopeManager
 from pydantic import BaseModel
 from pydantic import ValidationError
 from typing import Any
@@ -432,12 +433,16 @@ class Application(Router):
 
         tracer = opentracing.tracer
         headers: Optional[List[Tuple[str, bytes]]] = None
-        if tracer.active_span:
-            carrier: Dict[str, str] = {}
-            tracer.inject(
-                span_context=tracer.active_span, format=opentracing.Format.TEXT_MAP, carrier=carrier
-            )
-            headers = [(k, v.encode()) for k, v in carrier.items()]
+        if isinstance(tracer.scope_manager, ContextVarsScopeManager):
+            # This only makes sense if the context manager is asyncio aware
+            if tracer.active_span:
+                carrier: Dict[str, str] = {}
+                tracer.inject(
+                    span_context=tracer.active_span,
+                    format=opentracing.Format.TEXT_MAP,
+                    carrier=carrier,
+                )
+                headers = [(k, v.encode()) for k, v in carrier.items()]
 
         fut = await producer.send(
             topic_id,
