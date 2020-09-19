@@ -1,1 +1,2 @@
-from kafka.structs import ConsumerRecord, TopicPartition  # noqa
+from kafka.structs import ConsumerRecord  # noqa
+from kafka.structs import TopicPartition

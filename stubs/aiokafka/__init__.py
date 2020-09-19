@@ -6,6 +6,7 @@ from typing import AsyncIterator
 from typing import Awaitable
 from typing import List
 from typing import Optional
+from typing import Tuple
 
 
 class AIOKafkaProducer:
@@ -20,7 +21,11 @@ class AIOKafkaProducer:
         ...
 
     async def send(
-        self, topic_id: str, value: bytes, key: Optional[bytes] = None
+        self,
+        topic_id: str,
+        value: bytes,
+        key: Optional[bytes] = None,
+        headers: Optional[List[Tuple[str, bytes]]] = None,
     ) -> Awaitable[ConsumerRecord]:
         ...
 

@@ -23,6 +23,7 @@ from typing import cast
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 from typing import Type
 
 import aiokafka
@@ -33,6 +34,7 @@ import asyncio
 import fnmatch
 import inspect
 import logging
+import opentracing
 import orjson
 import pydantic
 import signal
@@ -176,6 +178,18 @@ class SubscriptionConsumer:
         try:
             # Consume messages
             async for record in self._consumer:
+                tracer = opentracing.tracer
+                headers = {x[0]: x[1].decode() for x in record.headers or []}
+                parent = tracer.extract(opentracing.Format.TEXT_MAP, headers)
+                context = tracer.start_active_span(
+                    record.topic,
+                    tags={
+                        "message_bus.destination": record.topic,
+                        "message_bus.partition": record.partition,
+                        "message_bus.group_id": self._subscription.group,
+                    },
+                    references=[opentracing.follows_from(parent)],
+                )
                 CONSUMER_TOPIC_OFFSET.labels(
                     group_id=self._subscription.group,
                     stream_id=record.topic,
@@ -192,15 +206,19 @@ class SubscriptionConsumer:
                 try:
                     logger.info(f"Handling msg: {record}")
                     msg_data = orjson.loads(record.value)
-                    it = iter(sig.parameters.keys())
-                    kwargs: Dict[str, Any] = {next(it): msg_handler(record, msg_data)}
-                    for key in it:
+                    it = iter(sig.parameters.items())
+                    name, _ = next(it)
+                    kwargs: Dict[str, Any] = {name: msg_handler(record, msg_data)}
+
+                    for key, param in it:
                         if key == "schema":
                             kwargs["schema"] = msg_data["schema"]
                         elif key == "record":
                             kwargs["record"] = record
                         elif key == "app":
                             kwargs["app"] = self._app
+                        elif issubclass(param.annotation, opentracing.Span):
+                            kwargs[key] = context.span
 
                     with CONSUMED_MESSAGE_TIME.labels(
                         stream_id=record.topic,
@@ -228,6 +246,8 @@ class SubscriptionConsumer:
                     ).inc()
 
                 finally:
+                    context.span.finish()
+                    context.close()
                     await self.emit("message", record=record)
         finally:
             try:
@@ -410,8 +430,20 @@ class Application(Router):
 
         producer = await self._get_producer()
 
+        tracer = opentracing.tracer
+        headers: Optional[List[Tuple[str, bytes]]] = None
+        if tracer.active_span:
+            carrier: Dict[str, str] = {}
+            tracer.inject(
+                span_context=tracer.active_span, format=opentracing.Format.TEXT_MAP, carrier=carrier
+            )
+            headers = [(k, v.encode()) for k, v in carrier.items()]
+
         fut = await producer.send(
-            topic_id, value=orjson.dumps({"schema": schema_key, "data": data_}), key=key
+            topic_id,
+            value=orjson.dumps({"schema": schema_key, "data": data_}),
+            key=key,
+            headers=headers,
         )
 
         fut.add_done_callback(partial(_published_callback, topic_id))  # type: ignore
