@@ -548,7 +548,6 @@ class Application(Router):
                     fut.cancel()
 
     async def consume_forever(self) -> None:
-        asyncio.create_task(self.health_check())
         self._subscription_consumers = []
 
         for subscription in self._subscriptions:
