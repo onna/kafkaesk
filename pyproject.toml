@@ -36,6 +36,7 @@ pytest-rerunfailures = "^9.0"
 pytest-cov = "^2.8.1"
 pdbpp = "^0.10.2"
 python-language-server = "^0.35.1"
+asyncmock = "^0.4.2"
 
 [tool.poetry.scripts]
 kafkaesk = 'kafkaesk.app:run'

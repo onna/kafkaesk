@@ -38,3 +38,7 @@ MESSAGE_LEAD_TIME = client.Histogram(
     "Time that the message has been waiting to be handled by a consumer (in seconds)",
     ["stream_id", "group_id", "partition"],
 )
+
+CONSUMER_REBALANCED = client.Counter(
+    "kafkaesk_consumer_rebalanced", "Consumer rebalances", ["stream_id", "group_id", "partition"],
+)
