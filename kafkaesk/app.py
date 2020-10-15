@@ -6,6 +6,7 @@ from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
 from .metrics import CONSUMED_MESSAGE_TIME
 from .metrics import CONSUMED_MESSAGES
+from .metrics import CONSUMER_REBALANCED
 from .metrics import CONSUMER_TOPIC_OFFSET
 from .metrics import MESSAGE_LEAD_TIME
 from .metrics import NOERROR
@@ -548,7 +549,6 @@ class Application(Router):
                     fut.cancel()
 
     async def consume_forever(self) -> None:
-        asyncio.create_task(self.health_check())
         self._subscription_consumers = []
 
         for subscription in self._subscriptions:
@@ -588,6 +588,9 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
         logger.info(f"Partitions assigned: {assigned}")
 
         for tp in assigned:
+            CONSUMER_REBALANCED.labels(
+                stream_id=tp.topic, partition=tp.partition, group_id=self.group_id,
+            ).inc()
             if tp not in starting_pos or starting_pos[tp].offset == -1:
                 # detect if we've never consumed from this topic before
                 # decision right now is to go back to beginning

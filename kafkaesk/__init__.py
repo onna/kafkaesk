@@ -3,4 +3,4 @@ from .app import Router  # noqa
 from .app import run  # noqa
 from .app import run_app  # noqa
 
-__version__ = "0.1.25"
+__version__ = "0.1.27"
