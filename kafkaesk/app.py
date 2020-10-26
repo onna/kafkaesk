@@ -206,7 +206,7 @@ class SubscriptionConsumer:
                 ).observe(lead_time)
 
                 try:
-                    logger.info(f"Handling msg: {record}")
+                    logger.debug(f"Handling msg: {record}")
                     msg_data = orjson.loads(record.value)
                     it = iter(sig.parameters.items())
                     name, _ = next(it)
