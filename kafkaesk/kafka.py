@@ -55,7 +55,9 @@ class KafkaTopicManager:
     async def topic_exists(self, topic: str) -> bool:
         if self._client is None:
             self._client = await run_async(
-                kafka.KafkaConsumer, bootstrap_servers=self._bootstrap_servers
+                kafka.KafkaConsumer,
+                bootstrap_servers=self._bootstrap_servers,
+                enable_auto_commit=False,
             )
         if topic in self._topic_cache:
             return True
