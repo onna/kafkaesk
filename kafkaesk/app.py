@@ -514,7 +514,7 @@ class Application(Router):
     async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
         await self.finalize()
 
-    async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> None:
+    async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> int:
 
         consumed = 0
 
@@ -547,6 +547,7 @@ class Application(Router):
             for fut in futures:
                 if not fut.done():
                     fut.cancel()
+        return consumed
 
     async def consume_forever(self) -> None:
         self._subscription_consumers = []
