@@ -85,14 +85,14 @@ class KafkaeskQueue:
                 await self._publish(stream, message)
 
     async def _publish(self, stream: str, message: BaseModel) -> None:
-        if self._app._intialized:
-            try:
-                await self._app.publish(stream, message)
-            except kafkaesk.exceptions.UnregisteredSchemaException:
-                self._print_to_stderr(message, "Log schema is not registered")
-            # TODO: Handle other Kafak errors that may be raised
-        else:
-            self._print_to_stderr(message, "Kafkaesk application is not initialized")
+        if not self._app._initialized:
+            await self._app.initialize()
+
+        try:
+            await self._app.publish(stream, message)
+        except kafkaesk.exceptions.UnregisteredSchemaException:
+            self._print_to_stderr(message, "Log schema is not registered")
+        # TODO: Handle other Kafak errors that may be raised
 
     def _print_to_stderr(self, message: BaseModel, error: str) -> None:
         sys.stderr.write(f"Error sending log to Kafak: \n{error}\nMessage: {message.json()}")

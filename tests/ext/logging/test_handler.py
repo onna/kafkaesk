@@ -4,25 +4,26 @@ from kafkaesk.ext.logging.handler import KafkaeskQueue
 from kafkaesk.ext.logging.handler import PydanticKafkaeskHandler
 from kafkaesk.ext.logging.handler import PydanticStreamHandler
 from typing import Optional
-from unittest import mock
 
 import asyncio
 import io
 import json
+import kafkaesk
 import logging
 import pydantic
 import pytest
+import uuid
 
 pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(scope="function")
 def logger():
-    l = logging.getLogger("test")
-    l.propagate = False
-    l.setLevel(logging.DEBUG)
+    ll = logging.getLogger("test")
+    ll.propagate = False
+    ll.setLevel(logging.DEBUG)
 
-    return l
+    return ll
 
 
 @pytest.fixture(scope="function")
@@ -44,6 +45,23 @@ def kafakesk_handler(app, logger):
     logger.addHandler(handler)
 
     return handler
+
+
+async def test_handler_initializes_applogger(kafka, logger):
+    app = kafkaesk.Application(
+        [f"{kafka[0]}:{kafka[1]}"],
+        topic_prefix=uuid.uuid4().hex,
+        kafka_settings={"metadata_max_age_ms": 500},
+    )
+
+    handler = PydanticKafkaeskHandler(app, "log.test")
+    handler.setFormatter(PydanticFormatter())
+    logger.addHandler(handler)
+
+    logger.error("Hi!")
+
+    await asyncio.sleep(0.1)
+    assert app._initialized
 
 
 @pytest.fixture(scope="function")
@@ -108,16 +126,6 @@ class TestPydanticKafkaeskHandler:
         assert log_consumer[0].message == "Test Message extra"
         assert log_consumer[0].foo == "bar"
 
-    async def test_kafak_handler_without_initializing_app(
-        self, app, kafakesk_handler, logger, capsys
-    ):
-
-        logger.info("Test Message %s", "extra")
-        await asyncio.sleep(0.01)
-
-        _, err = capsys.readouterr()
-        assert "Kafkaesk application is not initialized" in err
-
 
 class TestKafkaeskQueue:
     @pytest.fixture(scope="function")
@@ -180,21 +188,6 @@ class TestKafkaeskQueue:
 
         assert len(log_consumer) == 10
         assert queue._task.done()
-
-    async def test_queue_publish(self, app, queue, log_consumer, capsys):
-        async with app:
-
-            await queue._publish("log.test", PydanticLogModel())
-
-            await app.flush()
-            await app.consume_for(1, seconds=5)
-
-        assert len(log_consumer) == 1
-
-        await queue._publish("log.test", PydanticLogModel())
-
-        _, err = capsys.readouterr()
-        assert "Kafkaesk application is not initialized" in err
 
     @pytest.mark.with_max_queue(1)
     async def test_queue_max_size(self, app, queue):

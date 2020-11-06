@@ -341,7 +341,7 @@ class Application(Router):
         self._kafka_servers = kafka_servers
         self._kafka_settings = kafka_settings
         self._producer = None
-        self._intialized = False
+        self._initialized = False
         self._locks: Dict[str, asyncio.Lock] = {}
 
         self._kafka_api_version = kafka_api_version
@@ -409,7 +409,7 @@ class Application(Router):
     async def publish(
         self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
-        if not self._intialized:
+        if not self._initialized:
             async with self.get_lock("_"):
                 await self.initialize()
 
@@ -489,7 +489,7 @@ class Application(Router):
                             else None,
                         )
 
-        self._intialized = True
+        self._initialized = True
 
     async def finalize(self) -> None:
         await self._call_event_handlers("finalize")
@@ -502,10 +502,8 @@ class Application(Router):
             await self._topic_mng.finalize()
 
         self._producer = None
-        self._intialized = False
+        self._initialized = False
         self._topic_mng = None
-
-        self._intialized = False
 
     async def __aenter__(self) -> "Application":
         await self.initialize()
