@@ -126,16 +126,6 @@ class TestPydanticKafkaeskHandler:
         assert log_consumer[0].message == "Test Message extra"
         assert log_consumer[0].foo == "bar"
 
-    async def test_kafak_handler_without_initializing_app(
-        self, app, kafakesk_handler, logger, capsys
-    ):
-
-        logger.info("Test Message %s", "extra")
-        await asyncio.sleep(0.01)
-
-        _, err = capsys.readouterr()
-        assert "Kafkaesk application is not initialized" in err
-
 
 class TestKafkaeskQueue:
     @pytest.fixture(scope="function")
