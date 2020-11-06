@@ -4,25 +4,26 @@ from kafkaesk.ext.logging.handler import KafkaeskQueue
 from kafkaesk.ext.logging.handler import PydanticKafkaeskHandler
 from kafkaesk.ext.logging.handler import PydanticStreamHandler
 from typing import Optional
-from unittest import mock
 
 import asyncio
 import io
 import json
+import kafkaesk
 import logging
 import pydantic
 import pytest
+import uuid
 
 pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(scope="function")
 def logger():
-    l = logging.getLogger("test")
-    l.propagate = False
-    l.setLevel(logging.DEBUG)
+    ll = logging.getLogger("test")
+    ll.propagate = False
+    ll.setLevel(logging.DEBUG)
 
-    return l
+    return ll
 
 
 @pytest.fixture(scope="function")
@@ -44,6 +45,23 @@ def kafakesk_handler(app, logger):
     logger.addHandler(handler)
 
     return handler
+
+
+async def test_handler_initializes_applogger(kafka, logger):
+    app = kafkaesk.Application(
+        [f"{kafka[0]}:{kafka[1]}"],
+        topic_prefix=uuid.uuid4().hex,
+        kafka_settings={"metadata_max_age_ms": 500},
+    )
+
+    handler = PydanticKafkaeskHandler(app, "log.test")
+    handler.setFormatter(PydanticFormatter())
+    logger.addHandler(handler)
+
+    logger.error("Hi!")
+
+    await asyncio.sleep(0.1)
+    assert app._initialized
 
 
 @pytest.fixture(scope="function")
