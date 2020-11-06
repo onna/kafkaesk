@@ -199,21 +199,6 @@ class TestKafkaeskQueue:
         assert len(log_consumer) == 10
         assert queue._task.done()
 
-    async def test_queue_publish(self, app, queue, log_consumer, capsys):
-        async with app:
-
-            await queue._publish("log.test", PydanticLogModel())
-
-            await app.flush()
-            await app.consume_for(1, seconds=5)
-
-        assert len(log_consumer) == 1
-
-        await queue._publish("log.test", PydanticLogModel())
-
-        _, err = capsys.readouterr()
-        assert "Kafkaesk application is not initialized" in err
-
     @pytest.mark.with_max_queue(1)
     async def test_queue_max_size(self, app, queue):
 

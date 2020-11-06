@@ -505,8 +505,6 @@ class Application(Router):
         self._initialized = False
         self._topic_mng = None
 
-        self._initialized = False
-
     async def __aenter__(self) -> "Application":
         await self.initialize()
         return self
