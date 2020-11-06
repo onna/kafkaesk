@@ -85,7 +85,7 @@ class KafkaeskQueue:
                 await self._publish(stream, message)
 
     async def _publish(self, stream: str, message: BaseModel) -> None:
-        if not self._app._intialized:
+        if not self._app._initialized:
             await self._app.initialize()
 
         try:
