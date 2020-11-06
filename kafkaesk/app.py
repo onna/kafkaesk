@@ -349,6 +349,7 @@ class Application(Router):
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
         self._subscription_consumers: List[SubscriptionConsumer] = []
+        self._subscription_consumers_tasks: List[asyncio.Task] = []
 
     def mount(self, router: Router) -> None:
         self._subscriptions.extend(router.subscriptions)
@@ -498,6 +499,17 @@ class Application(Router):
             await self._producer.flush()
             await self._producer.stop()
 
+        if self._subscription_consumers_tasks:
+            for task in self._subscription_consumers_tasks:
+                if not task.done():
+                    task.cancel()
+
+            for task in self._subscription_consumers_tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    ...
+
         if self._topic_mng is not None:
             await self._topic_mng.finalize()
 
@@ -549,18 +561,27 @@ class Application(Router):
 
     async def consume_forever(self) -> None:
         self._subscription_consumers = []
+        self._subscription_consumers_tasks = []
 
         for subscription in self._subscriptions:
             consumer = SubscriptionConsumer(self, subscription)
             self._subscription_consumers.append(consumer)
 
         try:
-            futures = [asyncio.create_task(c()) for c in self._subscription_consumers]
-            await asyncio.gather(*futures)
+            self._subscription_consumers_tasks = [
+                asyncio.create_task(c()) for c in self._subscription_consumers
+            ]
+            await asyncio.gather(*self._subscription_consumers_tasks)
         finally:
-            for fut in futures:
-                if not fut.done():
-                    fut.cancel()
+            for task in self._subscription_consumers_tasks:
+                if not task.done():
+                    task.cancel()
+
+            for task in self._subscription_consumers_tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    ...
 
 
 class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
