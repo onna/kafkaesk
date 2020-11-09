@@ -42,3 +42,13 @@ MESSAGE_LEAD_TIME = client.Histogram(
 CONSUMER_REBALANCED = client.Counter(
     "kafkaesk_consumer_rebalanced", "Consumer rebalances", ["stream_id", "group_id", "partition"],
 )
+
+MESSAGE_FAILED = client.Counter(
+    "kafkaesk_consumer_message_failed", "Failed Messages", ["stream_id", "group_id", "partition"],
+)
+
+MESSAGE_REQUEUED = client.Counter(
+    "kafkaesk_consumer_message_requeued",
+    "Requeued Messages",
+    ["stream_id", "group_id", "partition"],
+)

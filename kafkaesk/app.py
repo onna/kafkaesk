@@ -12,6 +12,9 @@ from .metrics import MESSAGE_LEAD_TIME
 from .metrics import NOERROR
 from .metrics import PRODUCER_TOPIC_OFFSET
 from .metrics import PUBLISHED_MESSAGES
+from .retry import DefaultRetryPolicyFactory
+from .retry import get_default_retry_policy as get_global_default_retry_policy
+from .retry import RetryPolicy
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
@@ -46,10 +49,13 @@ logger = logging.getLogger("kafkaesk")
 
 
 class Subscription:
-    def __init__(self, stream_id: str, func: Callable, group: str):
+    def __init__(
+        self, stream_id: str, func: Callable, group: str, retry_policy: Optional[RetryPolicy] = None
+    ):
         self.stream_id = stream_id
         self.func = func
         self.group = group
+        self.retry_policy = retry_policy
 
     def __repr__(self) -> str:
         return f"<Subscription stream: {self.stream_id} >"
@@ -164,6 +170,14 @@ class SubscriptionConsumer:
         self._consumer.subscribe(pattern=pattern, listener=listener)
         await self._consumer.start()
 
+        # Initialize subscriber's retry policy
+        retry_policy = self._subscription.retry_policy
+        if retry_policy is None:
+            factory = self._app.get_default_retry_policy()
+            retry_policy = factory()
+
+        await retry_policy.initialize(self._app, self._subscription)
+
         msg_handler = _raw_msg_handler
         sig = inspect.signature(self._subscription.func)
         param_name = [k for k in sig.parameters.keys()][0]
@@ -236,9 +250,7 @@ class SubscriptionConsumer:
                         partition=record.partition,
                         group_id=self._subscription.group,
                     ).inc()
-                except UnhandledMessage:
-                    # how should we handle this? Right now, fail hard
-                    logger.warning(f"Could not process msg: {record}", exc_info=True)
+                except UnhandledMessage as err:
                     # We increase the error counter
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,
@@ -246,6 +258,7 @@ class SubscriptionConsumer:
                         error="UnhandledMessage",
                         group_id=self._subscription.group,
                     ).inc()
+                    await retry_policy(record=record, error=err)
 
                 finally:
                     context.span.finish()
@@ -290,9 +303,11 @@ class Router:
 
         self._event_handlers[name].append(handler)
 
-    def subscribe(self, stream_id: str, group: str,) -> Callable:
+    def subscribe(
+        self, stream_id: str, group: str, retry: Optional[RetryPolicy] = None,
+    ) -> Callable:
         def inner(func: Callable) -> Callable:
-            subscription = Subscription(stream_id, func, group or func.__name__)
+            subscription = Subscription(stream_id, func, group or func.__name__, retry)
             self._subscriptions.append(subscription)
             return func
 
@@ -351,10 +366,21 @@ class Application(Router):
         self._subscription_consumers: List[SubscriptionConsumer] = []
         self._subscription_consumers_tasks: List[asyncio.Task] = []
 
+        self._default_retry_policy: Optional[DefaultRetryPolicyFactory] = None
+
     def mount(self, router: Router) -> None:
         self._subscriptions.extend(router.subscriptions)
         self._schemas.update(router.schemas)
         self._event_handlers.update(router.event_handlers)
+
+    def get_default_retry_policy(self) -> DefaultRetryPolicyFactory:
+        if self._default_retry_policy is None:
+            return get_global_default_retry_policy()
+
+        return self._default_retry_policy
+
+    def set_default_retry_policy(self, policy: Optional[DefaultRetryPolicyFactory] = None) -> None:
+        self._default_retry_policy = policy
 
     async def health_check(self) -> None:
         for subscription_consumer in self._subscription_consumers:
