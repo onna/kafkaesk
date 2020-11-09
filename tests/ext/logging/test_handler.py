@@ -90,6 +90,20 @@ class TestPydanticStreamHandler:
         assert "Test Message extra" in message
         assert "foo=bar" in message
 
+    async def test_stream_handler_with_log_model_shortens_log_messae(self, stream_handler, logger):
+        class LogModel(pydantic.BaseModel):
+            _is_log_model = True
+            foo: str
+            bar: str
+
+        logger.info("Test Message %s", "extra", LogModel(foo="X" * 50, bar="Y" * 50))
+
+        message = stream_handler.getvalue()
+
+        assert "Test Message extra" in message
+        assert f"foo={'X' * 50}" in message
+        assert f"bar={'Y' * 50}" not in message
+
 
 class TestPydanticKafkaeskHandler:
     async def test_kafak_handler(self, app, kafakesk_handler, logger, log_consumer):
