@@ -180,6 +180,7 @@ async def test_subscription_creates_default_retry_policy(app):
 
     factory_mock.assert_called_once()
     factory_mock.return_value.initialize.assert_awaited_once()
+    factory_mock.return_value.finalize.assert_awaited_once()
 
 
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")

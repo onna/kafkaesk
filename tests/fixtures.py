@@ -9,7 +9,7 @@ async def kafka():
     yield os.environ.get("KAFKA", "localhost:9092").split(":")
 
 
-@pytest.fixture()
+@pytest.fixture(scope="function")
 async def app(kafka):
     yield kafkaesk.Application(
         [f"{kafka[0]}:{kafka[1]}"],
