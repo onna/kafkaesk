@@ -26,7 +26,7 @@ class PydanticStreamHandler(logging.StreamHandler):
     def __init__(self, stream: Optional[IO[str]] = None):
         super().__init__(stream=stream)
 
-    def format(self, record: PydanticLogRecord) -> str:
+    def format(self, record: PydanticLogRecord) -> str:  # type: ignore
         message = super().format(record)
 
         for log in getattr(record, "pydantic_data", []):
@@ -146,7 +146,10 @@ class PydanticKafkaeskHandler(logging.Handler):
     def _format_base_log(self, record: PydanticLogRecord) -> Dict[str, Any]:
         if record.exc_text is None and record.exc_info:
             record.exc_text = _formatter.formatException(record.exc_info)
-            record.exc_type = record.exc_info[0].__name__
+            try:
+                record.exc_type = record.exc_info[0].__name__  # type: ignore
+            except (AttributeError, IndexError):
+                ...
 
         if record.stack_info:
             record.stack_text = _formatter.formatStack(record.stack_info)
