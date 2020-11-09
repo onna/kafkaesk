@@ -176,22 +176,17 @@ KAFKA=localhost:9092 poetry run pytest tests
 
 # Extensions
 ## Logging
-This extension includes classes to extend python's logging framework to publish structured log messages to a kafka topic.  This extension is made up of three main components: an extended `logging.LogRecord`, a custom `logging.Formatter`, and a some custom `logging.Handler`s.
+This extension includes classes to extend python's logging framework to publish structured log messages to a kafka topic.  This extension is made up of three main components: an extended `logging.LogRecord` and a some custom `logging.Handler`s.
 
 See `logger.py` in examples directory.
 
 ### Log Record
 `kafkaesk.ext.logging.record.factory` is a function that will return `kafkaesk.ext.logging.record.PydanticLogRecord` objects.  The `factory()` function scans through any `args` passed to a logger and checks each item to determine if it is a subclass of `pydantid.BaseModel`.  If it is a base model instance and `model._is_log_model` evaluates to `True` the model will be removed from `args` and added to `record._pydantic_data`.  After that `factory()` will use logging's existing logic to finish creating the log record.
 
-The `factory()` function is automatically passed to `logging.setLogRecordFactory` when a `kafkaesk.ext.logging.formatter.PydanticFormatter` instance is created.
-
-### Formatter
-`kafkaesk.ext.logging.formatter.PydanticFormatter` is responsible for parsing all information in a log record and returning a `kafkaesk.logging.formatter.PydanticLogModel` instance.  The formatter will build the return message in two passes.  The first pass looks at `formatter.format_class` and attempts to create an instance of that class utilizing the log record's `__dict__`.  The second pass creates a standard dictionary from all models present in a log record's `_pydantic_data` property.  These results are then merged together and used to create a new `PydanticLogModel` instance which is returned to the handler.
-
 ### Handler
-This extensions ships with two handlers capable of handling `kafkaesk.ext.logging.formatter.PydanticLodModel` classes: `kafakesk.ext.logging.handler.PydanticStreamHandler` and `kafkaesk.ext.logging.handler.PydanticKafkaeskHandler`.  
+This extensions ships with two handlers capable of handling `kafkaesk.ext.logging.handler.PydanticLogModel` classes: `kafakesk.ext.logging.handler.PydanticStreamHandler` and `kafkaesk.ext.logging.handler.PydanticKafkaeskHandler`.  
 
-The stream handler is a very small wrapper around `logging.StreamHandler`, the signature is the same, the only difference is that the handler will attempt to convert any pydantic models it receives to a json string.
+The stream handler is a very small wrapper around `logging.StreamHandler`, the signature is the same, the only difference is that the handler will attempt to convert any pydantic models it receives human readable log message.
 
 The kafkaesk handler has a few more bits going on in the background.  The handler has two required inputs, a `kafkaesk.app.Application` instance and a stream name.  Once initialized any logs emitted by the handler will be saved into an internal queue.  There is a worker task that handles pulling logs from the queue and writing those logs to the specified topic.
 

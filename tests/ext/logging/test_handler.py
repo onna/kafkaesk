@@ -1,13 +1,11 @@
-from kafkaesk.ext.logging.formatter import PydanticFormatter
-from kafkaesk.ext.logging.formatter import PydanticLogModel
 from kafkaesk.ext.logging.handler import KafkaeskQueue
 from kafkaesk.ext.logging.handler import PydanticKafkaeskHandler
+from kafkaesk.ext.logging.handler import PydanticLogModel
 from kafkaesk.ext.logging.handler import PydanticStreamHandler
 from typing import Optional
 
 import asyncio
 import io
-import json
 import kafkaesk
 import logging
 import pydantic
@@ -31,8 +29,6 @@ def stream_handler(logger):
 
     stream = io.StringIO()
     handler = PydanticStreamHandler(stream=stream)
-    formatter = PydanticFormatter()
-    handler.setFormatter(formatter)
     logger.addHandler(handler)
 
     return stream
@@ -41,7 +37,6 @@ def stream_handler(logger):
 @pytest.fixture(scope="function")
 def kafakesk_handler(app, logger):
     handler = PydanticKafkaeskHandler(app, "log.test")
-    handler.setFormatter(PydanticFormatter())
     logger.addHandler(handler)
 
     return handler
@@ -55,7 +50,6 @@ async def test_handler_initializes_applogger(kafka, logger):
     )
 
     handler = PydanticKafkaeskHandler(app, "log.test")
-    handler.setFormatter(PydanticFormatter())
     logger.addHandler(handler)
 
     logger.error("Hi!")
@@ -81,11 +75,8 @@ class TestPydanticStreamHandler:
         logger.info("Test Message %s", "extra")
 
         message = stream_handler.getvalue()
-        data = json.loads(message)
 
-        assert data["message"] == "Test Message extra"
-        assert data["level"] == 20
-        assert data["severity"] == "INFO"
+        assert "Test Message extra" in message
 
     async def test_stream_handler_with_log_model(self, stream_handler, logger):
         class LogModel(pydantic.BaseModel):
@@ -95,10 +86,9 @@ class TestPydanticStreamHandler:
         logger.info("Test Message %s", "extra", LogModel(foo="bar"))
 
         message = stream_handler.getvalue()
-        data = json.loads(message)
 
-        assert data["message"] == "Test Message extra"
-        assert data["foo"] == "bar"
+        assert "Test Message extra" in message
+        assert "foo=bar" in message
 
 
 class TestPydanticKafkaeskHandler:
