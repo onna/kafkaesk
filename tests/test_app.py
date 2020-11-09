@@ -53,6 +53,20 @@ def test_mount_router(app):
     assert app.event_handlers == router.event_handlers
 
 
+def test_app_default_retry_policy(app):
+    # Test that app used module defaults
+    assert app.get_default_retry_policy() == kafkaesk.get_default_retry_policy()
+
+    # Test that the app's default retry policy can be updated
+    app.set_default_retry_policy(kafkaesk.retry.Forward)
+    assert app.get_default_retry_policy() == kafkaesk.retry.Forward
+    assert kafkaesk.get_default_retry_policy() == kafkaesk.retry.NoRetry
+
+    # Test that setting an app's default policy to none will use module default
+    app.set_default_retry_policy(None)
+    assert app.get_default_retry_policy() == kafkaesk.get_default_retry_policy()
+
+
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check():
     app = kafkaesk.Application()

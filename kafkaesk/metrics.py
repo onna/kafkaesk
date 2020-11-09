@@ -44,11 +44,13 @@ CONSUMER_REBALANCED = client.Counter(
 )
 
 MESSAGE_FAILED = client.Counter(
-    "kafkaesk_consumer_message_failed", "Failed Messages", ["stream_id", "group_id", "partition"],
+    "kafkaesk_consumer_message_failed",
+    "Failed Messages",
+    ["stream_id", "group_id", "partition", "error"],
 )
 
 MESSAGE_REQUEUED = client.Counter(
     "kafkaesk_consumer_message_requeued",
     "Requeued Messages",
-    ["stream_id", "group_id", "partition"],
+    ["stream_id", "group_id", "partition", "error"],
 )

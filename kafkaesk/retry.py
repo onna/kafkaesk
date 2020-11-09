@@ -54,10 +54,10 @@ class RetryPolicy(ABC):
         self._app = app
         self._subscription = subscription
 
-        self._finalized = True
+        self._initialized = True
 
     async def finalize(self) -> None:
-        self._finalized = False
+        self._initialized = False
 
     async def __call__(self, record: ConsumerRecord, error: Exception) -> None:
         if self._initialized is not True:
@@ -69,24 +69,24 @@ class RetryPolicy(ABC):
             return await self._handle_failure(record, error)
 
     async def _handle_retry(self, record: ConsumerRecord, error: Exception) -> None:
-        await self.handle_retry(record, error)
-
         MESSAGE_REQUEUED.labels(
             stream_id=record.topic,
             partition=record.partition,
-            error="UnhandledMessage",
+            error=error.__class__.__name__,
             group_id=self._subscription.group,
         ).inc()
 
-    async def _handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
-        await self.handle_failure(record, error)
+        await self.handle_retry(record, error)
 
+    async def _handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
         MESSAGE_FAILED.labels(
             stream_id=record.topic,
             partition=record.partition,
-            error="UnhandledMessage",
+            error=error.__class__.__name__,
             group_id=self._subscription.group,
         ).inc()
+
+        await self.handle_failure(record, error)
 
     def should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
         raise NotImplementedError
@@ -102,21 +102,21 @@ class NoRetry(RetryPolicy):
     def should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
         return False
 
-    async def _handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
+    async def handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
         raise error
 
 
 class Forward(RetryPolicy):
     async def initialize(self, app: "Application", subscription: "Subscription") -> None:
-        super().initialize(app, subscription)
+        await super().initialize(app, subscription)
 
         # Setup failure topic
-        self.failure_topic = f"{subscription.group}:{subscription.stream_id}"
+        self.failure_topic = f"{subscription.group}__{subscription.stream_id}"
 
     def should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
         return False
 
-    async def _handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
+    async def handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
 
         info = FailureInfo(
             retry_count=0,
