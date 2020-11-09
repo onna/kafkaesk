@@ -1,13 +1,16 @@
-from .app import Application
-from .app import Subscription
 from .metrics import MESSAGE_FAILED
 from .metrics import MESSAGE_REQUEUED
 from abc import ABC
 from aiokafka.structs import ConsumerRecord
 from pydantic import BaseModel
 from typing import Callable
+from typing import TYPE_CHECKING
 
 import datetime
+
+if TYPE_CHECKING:
+    from .app import Application
+    from .app import Subscription
 
 
 class RetryInfo(BaseModel):
@@ -16,31 +19,37 @@ class RetryInfo(BaseModel):
     retry_timestamp: datetime.datetime
     publish_timestamp: datetime.datetime
     publish_topic: str
-    error: Exception
+    error: str
 
 
 class RetryMessage(BaseModel):
     retry_info: RetryInfo
     original_record: ConsumerRecord
 
+    class Config:
+        arbitrary_types_allowed = True
+
 
 class FailureInfo(BaseModel):
     retry_count: int
     failure_timestamp: datetime.datetime
     publish_topic: str
-    error: Exception
+    error: str
 
 
 class FailureMessage(BaseModel):
     failure_info: FailureInfo
     original_record: ConsumerRecord
 
+    class Config:
+        arbitrary_types_allowed = True
+
 
 class RetryPolicy(ABC):
     def __init__(self) -> None:
         self._initialized = False
 
-    async def initialize(self, app: Application, subscription: Subscription) -> None:
+    async def initialize(self, app: "Application", subscription: "Subscription") -> None:
 
         self._app = app
         self._subscription = subscription
@@ -98,7 +107,7 @@ class NoRetry(RetryPolicy):
 
 
 class Forward(RetryPolicy):
-    async def initialize(self, app: Application, subscription: Subscription) -> None:
+    async def initialize(self, app: "Application", subscription: "Subscription") -> None:
         super().initialize(app, subscription)
 
         # Setup failure topic
@@ -113,7 +122,7 @@ class Forward(RetryPolicy):
             retry_count=0,
             failure_timestamp=datetime.datetime.now(),
             publish_topic=self._subscription.stream_id,
-            error=error,
+            error=error.__class__.__name__,
         )
         await self._app.publish(
             self.failure_topic, FailureMessage(failure_info=info, original_record=record)
