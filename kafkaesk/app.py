@@ -136,7 +136,7 @@ class SubscriptionConsumer:
             except StopConsumer:
                 raise
             except Exception:
-                logger.warning(f"Error emitting event: {name}: {func}")
+                logger.warning(f"Error emitting event: {name}: {func}", exc_info=True)
 
     async def __call__(self) -> None:
         try:
@@ -147,7 +147,7 @@ class SubscriptionConsumer:
         except aiokafka.errors.KafkaConnectionError:
             logger.warning("Connection error", exc_info=True)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
-            logger.info("Consumer stopped, exiting")
+            logger.debug("Consumer stopped, exiting")
 
     async def __run(self) -> None:
         self._consumer = aiokafka.AIOKafkaConsumer(
@@ -429,7 +429,7 @@ class Application(Router):
                     retention_ms=reg.retention * 1000 if reg.retention is not None else None,
                 )
 
-        logger.info(f"Sending kafka msg: {stream_id}")
+        logger.debug(f"Sending kafka msg: {stream_id}")
 
         producer = await self._get_producer()
 
@@ -605,7 +605,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
         starting_pos = await self.app.topic_mng.list_consumer_group_offsets(
             self.group_id, partitions=assigned
         )
-        logger.info(f"Partitions assigned: {assigned}")
+        logger.debug(f"Partitions assigned: {assigned}")
 
         for tp in assigned:
             CONSUMER_REBALANCED.labels(
@@ -640,7 +640,7 @@ cli_parser.add_argument("--api-version", help="Kafka API Version")
 
 def _close_app(app: Application, fut: asyncio.Future) -> None:
     if not fut.done():
-        logger.info("Cancelling consumer from signal")
+        logger.debug("Cancelling consumer from signal")
         fut.cancel()
 
 
@@ -651,7 +651,7 @@ async def run_app(app: Application) -> None:
         for signame in {"SIGINT", "SIGTERM"}:
             loop.add_signal_handler(getattr(signal, signame), partial(_close_app, app, fut))
         await fut
-        logger.info("Exiting consumer")
+        logger.debug("Exiting consumer")
 
 
 def run(app: Optional[Application] = None) -> None:
@@ -676,7 +676,7 @@ def run(app: Optional[Application] = None) -> None:
             app.configure(api_version=opts.api_version)
 
     try:
-        logger.info(f"Running kafkaesk consumer {app}")
+        logger.debug(f"Running kafkaesk consumer {app}")
         asyncio.run(run_app(app))
     except asyncio.CancelledError:
-        logger.info("Closing because task was exited")
+        logger.debug("Closing because task was exited")
