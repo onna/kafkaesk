@@ -176,7 +176,7 @@ KAFKA=localhost:9092 poetry run pytest tests
 
 # Extensions
 ## Logging
-This extension includes classes to extend python's logging framework to publish structured log messages to a kafka topic.  This extension is made up of three main components: an extended `logging.LogRecord` and a some custom `logging.Handler`s.
+This extension includes classes to extend python's logging framework to publish structured log messages to a kafka topic.  This extension is made up of three main components: an extended `logging.LogRecord` and some custom `logging.Handler`s.
 
 See `logger.py` in examples directory.
 
