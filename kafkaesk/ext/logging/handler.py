@@ -156,9 +156,10 @@ class PydanticKafkaeskHandler(logging.Handler):
 
         service_name = "unknown"
         hostname = socket.gethostname()
-        if hostname.count("-") > 1:
+        dashes = hostname.count("-")
+        if dashes > 0:
             # detect kubernetes service host
-            service_name = "-".join(hostname.split("-")[:-2])
+            service_name = "-".join(hostname.split("-")[: -min(dashes, 2)])
 
         return {
             "timestamp": datetime.utcnow().isoformat(),
