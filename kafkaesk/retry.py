@@ -1,3 +1,4 @@
+from .exceptions import UnhandledMessage
 from .metrics import MESSAGE_FAILED
 from .metrics import MESSAGE_REQUEUED
 from abc import ABC
@@ -63,10 +64,17 @@ class RetryPolicy(ABC):
         if self._initialized is not True:
             raise RuntimeError("RetryPolicy is not initialized")
 
-        if self.should_retry(record, error):
+        if self._should_retry(record, error):
             return await self._handle_retry(record, error)
         else:
             return await self._handle_failure(record, error)
+
+    def _should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
+        # We can not recover from formatting problems with the message.  Do not attempt to retry.
+        if isinstance(error, UnhandledMessage):
+            return False
+
+        return self.should_retry(record, error)
 
     async def _handle_retry(self, record: ConsumerRecord, error: Exception) -> None:
         MESSAGE_REQUEUED.labels(
@@ -86,7 +94,11 @@ class RetryPolicy(ABC):
             group_id=self._subscription.group,
         ).inc()
 
-        await self.handle_failure(record, error)
+        try:
+            await self.handle_failure(record, error)
+        except UnhandledMessage:
+            # Here we swallow any errors related to input format to mantain existing functionality
+            pass
 
     def should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
         raise NotImplementedError

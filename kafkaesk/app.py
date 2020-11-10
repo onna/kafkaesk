@@ -251,11 +251,19 @@ class SubscriptionConsumer:
                         group_id=self._subscription.group,
                     ).inc()
                 except UnhandledMessage as err:
-                    # We increase the error counter
+                    logger.warning(f"Could not process msg: {record}", exc_info=True)
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,
                         partition=record.partition,
                         error="UnhandledMessage",
+                        group_id=self._subscription.group,
+                    ).inc()
+                    await retry_policy(record=record, error=err)
+                except Exception as err:
+                    CONSUMED_MESSAGES.labels(
+                        stream_id=record.topic,
+                        partition=record.partition,
+                        error=err.__class__.__name__,
                         group_id=self._subscription.group,
                     ).inc()
                     await retry_policy(record=record, error=err)

@@ -32,6 +32,10 @@ def record():
     )
 
 
+class NOOPException(Exception):
+    ...
+
+
 async def noop_callback(*args, **kwargs):
     ...
 
@@ -49,15 +53,15 @@ async def test_default_retry_policy():
 async def test_retry_policy(app, record):
     class NOOPRetry(kafkaesk.retry.RetryPolicy):
         def __init__(self):
-            self._should_retry = True
+            self._retry_flag = True
 
             super().__init__()
 
         def set_should_retry(self, action):
-            self._should_retry = action
+            self._retry_flag = action
 
         def should_retry(self, *args, **kwargs):
-            return self._should_retry
+            return self._retry_flag
 
         handle_retry = AsyncMock()
         handle_failure = AsyncMock()
@@ -65,7 +69,7 @@ async def test_retry_policy(app, record):
     policy = NOOPRetry()
     subscription = kafkaesk.app.Subscription("foobar", noop_callback, "group", policy)
 
-    error = kafkaesk.exceptions.UnhandledMessage()
+    error = NOOPException()
 
     # Check for initilization errors
     with pytest.raises(RuntimeError):
@@ -90,7 +94,7 @@ async def test_retry_policy(app, record):
         policy.set_should_retry(False)
 
         await policy(record, error)
-        policy.handle_failure.assert_called_once()
+        policy.handle_failure.assert_awaited_once()
 
         failed_metrics.labels.assert_called_with(
             stream_id="foobar", partition=0, group_id="group", error=error.__class__.__name__
@@ -99,16 +103,39 @@ async def test_retry_policy(app, record):
             stream_id="foobar", partition=0, group_id="group", error=error.__class__.__name__
         ).inc.assert_called_once()
 
+    # Check that UnhandledMessage errors are handled properly
+    with patch("kafkaesk.retry.MESSAGE_FAILED") as failed_metrics:
+        policy.set_should_retry(True)
+        message_error = kafkaesk.exceptions.UnhandledMessage()
+
+        policy.handle_failure.reset_mock(side_effect=message_error)
+
+        await policy(record, message_error)
+        policy.handle_failure.assert_awaited_once()
+
+        failed_metrics.labels.assert_called_with(
+            stream_id="foobar",
+            partition=0,
+            group_id="group",
+            error=message_error.__class__.__name__,
+        )
+        failed_metrics.labels(
+            stream_id="foobar",
+            partition=0,
+            group_id="group",
+            error=message_error.__class__.__name__,
+        ).inc.assert_called_once()
+
 
 async def test_no_retry_policy(app, record):
     policy = kafkaesk.retry.NoRetry()
     subscription = kafkaesk.app.Subscription("foobar", noop_callback, "group", policy)
 
     await policy.initialize(app, subscription)
-    error = kafkaesk.exceptions.UnhandledMessage()
+    error = NOOPException()
 
     assert policy.should_retry(record, error) is False
-    with pytest.raises(kafkaesk.exceptions.UnhandledMessage):
+    with pytest.raises(NOOPException):
         await policy.handle_failure(record, error)
 
 
@@ -120,7 +147,7 @@ async def test_forward_retry_policy(record):
     subscription = kafkaesk.app.Subscription("foobar", noop_callback, "group", policy)
 
     await policy.initialize(app_mock, subscription)
-    error = kafkaesk.exceptions.UnhandledMessage()
+    error = NOOPException()
 
     # Make sure we never retry
     assert policy.should_retry(record, error) is False
