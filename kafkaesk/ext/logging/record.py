@@ -61,3 +61,7 @@ def factory(
     )
 
     return record
+
+
+if logging.getLogRecordFactory() != factory:
+    logging.setLogRecordFactory(factory)

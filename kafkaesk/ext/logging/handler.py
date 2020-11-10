@@ -1,12 +1,15 @@
-from .formatter import PydanticLogModel
 from .record import PydanticLogRecord
-from pydantic import BaseModel
+from datetime import datetime
+from typing import Any
+from typing import Dict
 from typing import IO
 from typing import Optional
 
 import asyncio
 import kafkaesk
 import logging
+import pydantic
+import socket
 import sys
 
 
@@ -14,15 +17,31 @@ class InvalidLogFormat(Exception):
     ...
 
 
+class PydanticLogModel(pydantic.BaseModel):
+    class Config:
+        extra = pydantic.Extra.allow
+
+
 class PydanticStreamHandler(logging.StreamHandler):
     def __init__(self, stream: Optional[IO[str]] = None):
         super().__init__(stream=stream)
 
-    def format(self, record: logging.LogRecord) -> str:
+    def format(self, record: PydanticLogRecord) -> str:  # type: ignore
         message = super().format(record)
 
-        if isinstance(message, BaseModel):
-            message = message.json()
+        for log in getattr(record, "pydantic_data", []):
+            # log some attributes
+            formatted_data = []
+            size = 0
+            for field_name in log.fields.keys():
+                val = getattr(log, field_name)
+                formatted = f"{field_name}={val}"
+                size += len(formatted)
+                formatted_data.append(formatted)
+                if size > 50:
+                    break
+            message += f": {', '.join(formatted_data)}"
+            break
 
         return message
 
@@ -68,8 +87,8 @@ class KafkaeskQueue:
 
         while True:
             try:
-                stream, message = await asyncio.wait_for(self._queue.get(), 1)
-                await self._publish(stream, message)
+                stream, log_data = await asyncio.wait_for(self._queue.get(), 1)
+                await self._publish(stream, log_data)
 
             except asyncio.TimeoutError:
                 continue
@@ -84,26 +103,31 @@ class KafkaeskQueue:
                 stream, message = await self._queue.get()
                 await self._publish(stream, message)
 
-    async def _publish(self, stream: str, message: BaseModel) -> None:
+    async def _publish(self, stream: str, log_data: PydanticLogModel) -> None:
         if not self._app._initialized:
             await self._app.initialize()
 
         try:
-            await self._app.publish(stream, message)
+            await self._app.publish(stream, log_data)
         except kafkaesk.exceptions.UnregisteredSchemaException:
-            self._print_to_stderr(message, "Log schema is not registered")
+            self._print_to_stderr("Log schema is not registered", log_data)
         # TODO: Handle other Kafak errors that may be raised
 
-    def _print_to_stderr(self, message: BaseModel, error: str) -> None:
-        sys.stderr.write(f"Error sending log to Kafak: \n{error}\nMessage: {message.json()}")
+    def _print_to_stderr(self, error: str, log_data: PydanticLogModel) -> None:
+        sys.stderr.write(f"Error sending log to Kafka: \n{error}\nMessage: {log_data.json()}")
 
-    def put_nowait(self, stream: str, message: PydanticLogModel) -> None:
+    def put_nowait(self, stream: str, log_data: PydanticLogModel) -> None:
         if self._queue is not None:
-            self._queue.put_nowait((stream, message))
+            self._queue.put_nowait((stream, log_data))
+
+
+_formatter = logging.Formatter()
 
 
 class PydanticKafkaeskHandler(logging.Handler):
-    def __init__(self, app: kafkaesk.Application, stream: str):
+    def __init__(
+        self, app: kafkaesk.Application, stream: str,
+    ):
         self.app = app
         self.stream = stream
 
@@ -119,16 +143,54 @@ class PydanticKafkaeskHandler(logging.Handler):
         except kafkaesk.app.SchemaConflictException:
             pass
 
+    def _format_base_log(self, record: PydanticLogRecord) -> Dict[str, Any]:
+        if record.exc_text is None and record.exc_info:
+            record.exc_text = _formatter.formatException(record.exc_info)
+            try:
+                record.exc_type = record.exc_info[0].__name__  # type: ignore
+            except (AttributeError, IndexError):
+                ...
+
+        if record.stack_info:
+            record.stack_text = _formatter.formatStack(record.stack_info)
+
+        service_name = "unknown"
+        hostname = socket.gethostname()
+        dashes = hostname.count("-")
+        if dashes > 0:
+            # detect kubernetes service host
+            service_name = "-".join(hostname.split("-")[: -min(dashes, 2)])
+
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "logger": record.name,
+            "severity": record.levelname,
+            "level": record.levelno,
+            "message": record.getMessage(),
+            "exception": record.exc_type,
+            "trace": record.stack_text,
+            "stack": record.exc_text,
+            "hostname": hostname,
+            "service": service_name,
+        }
+
+    def _format_extra_logs(self, record: PydanticLogRecord) -> Dict[str, Any]:
+        extra_logs: Dict[str, Any] = {}
+
+        for log in getattr(record, "pydantic_data", []):
+            extra_logs.update(log.dict(exclude_none=True, exclude={"_is_log_model",}))
+
+        return extra_logs
+
     def emit(self, record: PydanticLogRecord) -> None:  # type: ignore
         if not self._queue.running:
             self._queue.start()
 
         try:
-            message = self.format(record)
-            if not isinstance(message, BaseModel):
-                raise InvalidLogFormat()
-
-            self._queue.put_nowait(self.stream, message)
+            raw_data = self._format_base_log(record)
+            raw_data.update(self._format_extra_logs(record))
+            log_data = PydanticLogModel(**raw_data)
+            self._queue.put_nowait(self.stream, log_data)
         except InvalidLogFormat:
             sys.stderr.write("PydanticKafkaeskHandler recieved non-pydantic model")
         except RuntimeError:

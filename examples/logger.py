@@ -1,5 +1,4 @@
 from kafkaesk import Application
-from kafkaesk.ext.logging import PydanticFormatter
 from kafkaesk.ext.logging import PydanticKafkaeskHandler
 from kafkaesk.ext.logging import PydanticLogModel
 from kafkaesk.ext.logging import PydanticStreamHandler
@@ -20,14 +19,11 @@ async def test_log() -> None:
 
     logger = logging.getLogger("kafkaesk.ext.logging.kafka")
     handler = PydanticKafkaeskHandler(app, "logging.test")
-    formatter = PydanticFormatter()
-    handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
 
     stream_logger = logging.getLogger("kafakesk.ext.logging.stream")
     stream_handler = PydanticStreamHandler()
-    stream_handler.setFormatter(formatter)
     stream_logger.addHandler(stream_handler)
     stream_logger.setLevel(logging.DEBUG)
 
