@@ -81,7 +81,7 @@ async def test_retry_policy(app, record):
         def should_requeue(self, *args, **kwargs):
             return self._retry_flag
 
-        handle_retry = AsyncMock()
+        handle_requeue = AsyncMock()
         handle_failure = AsyncMock()
 
     policy = NOOPRetry()
@@ -98,7 +98,7 @@ async def test_retry_policy(app, record):
     # Check that retry logic is called
     with patch("kafkaesk.retry.MESSAGE_REQUEUED") as requeued_metrics:
         await policy(record, error)
-        policy.handle_retry.assert_called_once()
+        policy.handle_requeue.assert_called_once()
 
         requeued_metrics.labels.assert_called_with(
             stream_id="foobar", partition=0, group_id="group", error=error.__class__.__name__

@@ -113,7 +113,7 @@ class RetryPolicy(ABC):
             raise RuntimeError("RetryPolicy is not initialized")
 
         if self._should_requeue(record, error):
-            return await self._handle_retry(record, error)
+            return await self._handle_requeue(record, error)
         else:
             return await self._handle_failure(record, error)
 
@@ -126,7 +126,7 @@ class RetryPolicy(ABC):
 
         return self.should_requeue(record, error)
 
-    async def _handle_retry(self, record: ConsumerRecord, error: Exception) -> None:
+    async def _handle_requeue(self, record: ConsumerRecord, error: Exception) -> None:
         MESSAGE_REQUEUED.labels(
             stream_id=record.topic,
             partition=record.partition,
@@ -134,7 +134,7 @@ class RetryPolicy(ABC):
             group_id=self._subscription.group,
         ).inc()
 
-        await self.handle_retry(record, error)
+        await self.handle_requeue(record, error)
 
     async def _handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
         MESSAGE_FAILED.labels(
@@ -149,7 +149,7 @@ class RetryPolicy(ABC):
     def should_requeue(self, record: ConsumerRecord, error: Exception) -> bool:
         raise NotImplementedError
 
-    async def handle_retry(self, record: ConsumerRecord, error: Exception) -> None:
+    async def handle_requeue(self, record: ConsumerRecord, error: Exception) -> None:
         raise NotImplementedError
 
     async def handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
