@@ -5,6 +5,7 @@ from abc import ABC
 from aiokafka.structs import ConsumerRecord
 from pydantic import BaseModel
 from typing import Callable
+from typing import Optional
 from typing import TYPE_CHECKING
 
 import datetime
@@ -12,6 +13,39 @@ import datetime
 if TYPE_CHECKING:
     from .app import Application
     from .app import Subscription
+
+
+class Record(BaseModel):
+    topic: str
+    partition: int
+    offset: int
+    timestamp: int
+    timestamp_type: int
+    key: Optional[str] = None
+    value: bytes
+    checksum: Optional[int] = None
+    serialized_key_size: int
+    serialized_value_size: int
+    headers: tuple
+
+    @classmethod
+    def from_consumer_record(cls, record: ConsumerRecord) -> "Record":
+        return cls(
+            topic=record.topic,
+            partition=record.partition,
+            offset=record.offset,
+            timestamp=record.timestamp,  # type: ignore
+            timestamp_type=record.timestamp_type,  # type: ignore
+            key=record.key,  # type: ignore
+            value=record.value,  # type: ignore
+            checksum=record.checksum,  # type: ignore
+            serialized_key_size=record.serialized_key_size,  # type: ignore
+            serialized_value_size=record.serialized_value_size,  # type: ignore
+            headers=record.headers,
+        )
+
+    def to_consumer_record(self) -> ConsumerRecord:
+        return ConsumerRecord(**self.dict())  # type: ignore
 
 
 class RetryInfo(BaseModel):
@@ -25,7 +59,7 @@ class RetryInfo(BaseModel):
 
 class RetryMessage(BaseModel):
     retry_info: RetryInfo
-    original_record: ConsumerRecord
+    original_record: Record
 
     class Config:
         arbitrary_types_allowed = True
@@ -40,7 +74,7 @@ class FailureInfo(BaseModel):
 
 class FailureMessage(BaseModel):
     failure_info: FailureInfo
-    original_record: ConsumerRecord
+    original_record: Record
 
     class Config:
         arbitrary_types_allowed = True
@@ -137,7 +171,8 @@ class Forward(RetryPolicy):
             error=error.__class__.__name__,
         )
         await self._app.publish(
-            self.failure_topic, FailureMessage(failure_info=info, original_record=record)
+            self.failure_topic,
+            FailureMessage(failure_info=info, original_record=Record.from_consumer_record(record)),
         )
 
 
@@ -148,7 +183,6 @@ _default_retry_policy: DefaultRetryPolicyFactory = NoRetry
 
 def get_default_retry_policy() -> DefaultRetryPolicyFactory:
     global _default_retry_policy
-
     return _default_retry_policy
 
 
