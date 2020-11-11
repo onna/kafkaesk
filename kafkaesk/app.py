@@ -258,7 +258,11 @@ class SubscriptionConsumer:
                         error="UnhandledMessage",
                         group_id=self._subscription.group,
                     ).inc()
-                    await retry_policy(record=record, error=err)
+                    try:
+                        await retry_policy(record=record, error=err)
+                    except UnhandledMessage:
+                        # Do not allow this exception up the stack if it is re-raised
+                        ...
                 except Exception as err:
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,

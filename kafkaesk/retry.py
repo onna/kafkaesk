@@ -5,7 +5,9 @@ from abc import ABC
 from aiokafka.structs import ConsumerRecord
 from pydantic import BaseModel
 from typing import Callable
+from typing import List
 from typing import Optional
+from typing import Type
 from typing import TYPE_CHECKING
 
 import datetime
@@ -81,8 +83,9 @@ class FailureMessage(BaseModel):
 
 
 class RetryPolicy(ABC):
-    def __init__(self) -> None:
+    def __init__(self, no_retry_exceptions: Optional[List[Type[Exception]]] = None) -> None:
         self._initialized = False
+        self._no_requeue_exceptions = no_retry_exceptions or []
 
     async def initialize(self, app: "Application", subscription: "Subscription") -> None:
 
@@ -94,21 +97,34 @@ class RetryPolicy(ABC):
     async def finalize(self) -> None:
         self._initialized = False
 
+    def add_no_requeue_exception(self, exception: Type[Exception]) -> None:
+        if exception not in self._no_requeue_exceptions:
+            self._no_requeue_exceptions.append(exception)
+
+    def remove_no_requeue_exception(self, exception: Type[Exception]) -> None:
+        if exception in self._no_requeue_exceptions:
+            self._no_requeue_exceptions.remove(exception)
+
+    def get_no_requeue_exceptions(self) -> List[Type[Exception]]:
+        return self._no_requeue_exceptions
+
     async def __call__(self, record: ConsumerRecord, error: Exception) -> None:
         if self._initialized is not True:
             raise RuntimeError("RetryPolicy is not initialized")
 
-        if self._should_retry(record, error):
+        if self._should_requeue(record, error):
             return await self._handle_retry(record, error)
         else:
             return await self._handle_failure(record, error)
 
-    def _should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
-        # We can not recover from formatting problems with the message.  Do not attempt to retry.
-        if isinstance(error, UnhandledMessage):
+    def _should_requeue(self, record: ConsumerRecord, error: Exception) -> bool:
+        if (
+            type(error) in self._no_requeue_exceptions
+            or type(error) in _global_no_requeue_exceptions
+        ):
             return False
 
-        return self.should_retry(record, error)
+        return self.should_requeue(record, error)
 
     async def _handle_retry(self, record: ConsumerRecord, error: Exception) -> None:
         MESSAGE_REQUEUED.labels(
@@ -128,13 +144,9 @@ class RetryPolicy(ABC):
             group_id=self._subscription.group,
         ).inc()
 
-        try:
-            await self.handle_failure(record, error)
-        except UnhandledMessage:
-            # Here we swallow any errors related to input format to mantain existing functionality
-            pass
+        await self.handle_failure(record, error)
 
-    def should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
+    def should_requeue(self, record: ConsumerRecord, error: Exception) -> bool:
         raise NotImplementedError
 
     async def handle_retry(self, record: ConsumerRecord, error: Exception) -> None:
@@ -145,7 +157,7 @@ class RetryPolicy(ABC):
 
 
 class NoRetry(RetryPolicy):
-    def should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
+    def should_requeue(self, record: ConsumerRecord, error: Exception) -> bool:
         return False
 
     async def handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
@@ -159,7 +171,7 @@ class Forward(RetryPolicy):
         # Setup failure topic
         self.failure_topic = f"{subscription.group}__{subscription.stream_id}"
 
-    def should_retry(self, record: ConsumerRecord, error: Exception) -> bool:
+    def should_requeue(self, record: ConsumerRecord, error: Exception) -> bool:
         return False
 
     async def handle_failure(self, record: ConsumerRecord, error: Exception) -> None:
@@ -189,3 +201,16 @@ def get_default_retry_policy() -> DefaultRetryPolicyFactory:
 def set_default_retry_policy(policy: DefaultRetryPolicyFactory) -> None:
     global _default_retry_policy
     _default_retry_policy = policy
+
+
+_global_no_requeue_exceptions: List[Type[Exception]] = [UnhandledMessage]
+
+
+def get_global_no_requeue_exceptions() -> List[Type[Exception]]:
+    global _global_no_requeue_exceptions
+    return _global_no_requeue_exceptions
+
+
+def set_global_no_requeue_exceptions(exceptions: List[Type[Exception]]) -> None:
+    global _global_no_requeue_exceptions
+    _global_no_requeue_exceptions = exceptions[:]

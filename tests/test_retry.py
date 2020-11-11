@@ -49,6 +49,24 @@ async def test_default_retry_policy():
     assert kafkaesk.get_default_retry_policy() == kafkaesk.retry.Forward
 
 
+async def test_global_no_retry_exceptions():
+    # Check that we initialize with `UnhandledMessage` by default
+    assert kafkaesk.retry.get_global_no_requeue_exceptions() == [
+        kafkaesk.exceptions.UnhandledMessage
+    ]
+
+    # Check that we can add new exceptions
+    kafkaesk.retry.set_global_no_requeue_exceptions(
+        [kafkaesk.exceptions.UnhandledMessage, NOOPException,]
+    )
+    assert kafkaesk.retry.get_global_no_requeue_exceptions() == [
+        kafkaesk.exceptions.UnhandledMessage,
+        NOOPException,
+    ]
+
+    kafkaesk.retry.set_global_no_requeue_exceptions([kafkaesk.exceptions.UnhandledMessage])
+
+
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_retry_policy(app, record):
     class NOOPRetry(kafkaesk.retry.RetryPolicy):
@@ -57,10 +75,10 @@ async def test_retry_policy(app, record):
 
             super().__init__()
 
-        def set_should_retry(self, action):
+        def set_should_requeue(self, action):
             self._retry_flag = action
 
-        def should_retry(self, *args, **kwargs):
+        def should_requeue(self, *args, **kwargs):
             return self._retry_flag
 
         handle_retry = AsyncMock()
@@ -91,7 +109,7 @@ async def test_retry_policy(app, record):
 
     # Check that failure logic is called
     with patch("kafkaesk.retry.MESSAGE_FAILED") as failed_metrics:
-        policy.set_should_retry(False)
+        policy.set_should_requeue(False)
 
         await policy(record, error)
         policy.handle_failure.assert_awaited_once()
@@ -105,7 +123,7 @@ async def test_retry_policy(app, record):
 
     # Check that UnhandledMessage errors are handled properly
     with patch("kafkaesk.retry.MESSAGE_FAILED") as failed_metrics:
-        policy.set_should_retry(True)
+        policy.set_should_requeue(True)
         message_error = kafkaesk.exceptions.UnhandledMessage()
 
         policy.handle_failure.reset_mock(side_effect=message_error)
@@ -127,6 +145,30 @@ async def test_retry_policy(app, record):
         ).inc.assert_called_once()
 
 
+async def test_retry_policy_no_requeue_exceptions(record):
+    class NOOPRetry(kafkaesk.retry.RetryPolicy):
+        def should_requeue(self, record: ConsumerRecord, error: Exception) -> bool:
+            return True
+
+    error = NOOPException()
+    policy = NOOPRetry()
+
+    # Test new exceptions can be added
+    policy.add_no_requeue_exception(NOOPException)
+    assert len(policy.get_no_requeue_exceptions()) == 1
+    assert policy._should_requeue(record, error) is False
+
+    # Test exception can be removed
+    policy.remove_no_requeue_exception(NOOPException)
+    assert len(policy.get_no_requeue_exceptions()) == 0
+    assert policy._should_requeue(record, error) is True
+
+    # Test global exceptions are also checked
+    kafkaesk.retry.set_global_no_requeue_exceptions([kafkaesk.exceptions.UnhandledMessage])
+    message_error = kafkaesk.exceptions.UnhandledMessage()
+    assert policy._should_requeue(record, message_error) is False
+
+
 async def test_no_retry_policy(app, record):
     policy = kafkaesk.retry.NoRetry()
     subscription = kafkaesk.app.Subscription("foobar", noop_callback, "group", policy)
@@ -134,7 +176,7 @@ async def test_no_retry_policy(app, record):
     await policy.initialize(app, subscription)
     error = NOOPException()
 
-    assert policy.should_retry(record, error) is False
+    assert policy.should_requeue(record, error) is False
     with pytest.raises(NOOPException):
         await policy.handle_failure(record, error)
 
@@ -150,7 +192,7 @@ async def test_forward_retry_policy(record):
     error = NOOPException()
 
     # Make sure we never retry
-    assert policy.should_retry(record, error) is False
+    assert policy.should_requeue(record, error) is False
 
     # Check that failed messages are forwarded to the correct queue
     await policy(record, error)
