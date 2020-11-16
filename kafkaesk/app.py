@@ -248,7 +248,6 @@ class SubscriptionConsumer:
                     ).inc()
 
                 finally:
-                    context.span.finish()
                     context.close()
                     await self.emit("message", record=record)
         finally:
