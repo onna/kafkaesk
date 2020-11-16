@@ -1,10 +1,18 @@
 from aiokafka import ConsumerRecord
 from kafkaesk.kafka import KafkaTopicManager
+from kafkaesk.retry import NoRetry
+from unittest.mock import Mock
+from unittest.mock import patch
 
 import asyncio
 import pydantic
 import pytest
 import uuid
+
+try:
+    from unittest.mock import AsyncMock
+except:  # noqa
+    AsyncMock = None  # type: ignore
 
 pytestmark = pytest.mark.asyncio
 
@@ -114,11 +122,19 @@ async def test_multiple_subscribers_different_models(app):
         foo: str
         bar: str
 
-    @app.subscribe("foo.bar", group="test_group")
+    @app.subscribe(
+        "foo.bar",
+        group="test_group",
+        retry_handlers={Exception: NoRetry("test_group__foo.bar__Exception")},
+    )
     async def consume1(data: Foo1):
         consumed1.append(data)
 
-    @app.subscribe("foo.bar", group="test_group_2")
+    @app.subscribe(
+        "foo.bar",
+        group="test_group_2",
+        retry_handlers={Exception: NoRetry("test_group__foo.bar__Exception")},
+    )
     async def consume2(data: Foo2):
         consumed2.append(data)
 
@@ -222,3 +238,52 @@ async def test_cache_topic_exists_topic_mng(kafka):
 
     await mng.create_topic(topic_id)
     assert await mng.topic_exists(topic_id)
+
+
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
+async def test_subscription_creates_retry_policy(app):
+    @app.schema("Foo", version=1)
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar", group="test_group")
+    async def noop(data: Foo):
+        ...
+
+    policy_mock = Mock(return_value=AsyncMock())
+    factory_mock = Mock(return_value=policy_mock)
+    with patch("kafkaesk.app.RetryPolicy", new_callable=factory_mock):
+        async with app:
+            fut = asyncio.create_task(app.consume_for(1, seconds=5))
+            await asyncio.sleep(0.2)
+
+            await app.publish("foo.bar", Foo(bar=1))
+            await app.flush()
+            await fut
+
+        policy_mock.assert_called_once()
+        policy_mock.return_value.initialize.assert_awaited_once()
+        policy_mock.return_value.finalize.assert_awaited_once()
+
+
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
+async def test_subscription_calls_retry_policy(app):
+    handler_mock = AsyncMock()
+
+    @app.schema("Foo", version=1)
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar", group="test_group", retry_handlers={Exception: handler_mock})
+    async def noop(data: Foo):
+        raise Exception("Unhandled Exception")
+
+    async with app:
+        fut = asyncio.create_task(app.consume_for(1, seconds=5))
+        await asyncio.sleep(0.2)
+
+        await app.publish("foo.bar", Foo(bar=1))
+        await app.flush()
+        await fut
+
+    handler_mock.assert_awaited_once()
