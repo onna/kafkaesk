@@ -53,7 +53,10 @@ async def test_retry_message_is_serializable(record: ConsumerRecord) -> None:
     json_serialized = retry_message.json()
 
     # Ensure we can re-create a message from the json
-    retry.RetryMessage.parse_raw(json_serialized)
+    deserialized_message = retry.RetryMessage.parse_raw(json_serialized)
+
+    # Ensure we can re-create a ConsumerRecord from our Record object
+    deserialized_message.original_record.to_consumer_record()
 
 
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
@@ -111,6 +114,10 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
             exception="NOOPException",
         )
         metric_mock.labels.return_value.inc.assert_called_once()
+
+    # Check that multiple handlers may not be registered for an exception
+    with pytest.raises(ValueError):
+        await policy.add_retry_handler(NOOPException, handler_mock)
 
     # Check that configured exceptions can be removed
     await policy.remove_retry_handler(NOOPException)
