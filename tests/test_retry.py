@@ -92,6 +92,14 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
     assert handler_mock.await_args[0][1] == "Exception"
 
 
+async def test_noretry_handler(record: ConsumerRecord) -> None:
+    error = NOOPException()
+    retry_history = retry.RetryHistory()
+
+    noretry = retry.NoRetry("Dummy")
+    await noretry(None, "NOOPException", retry_history, record, error)
+
+
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_forward_handler(record: ConsumerRecord) -> None:
     policy = AsyncMock()

@@ -26,7 +26,7 @@ class Record(BaseModel):
     timestamp: int
     timestamp_type: int
     key: Optional[str] = None
-    value: bytes
+    value: str
     checksum: Optional[int] = None
     serialized_key_size: int
     serialized_value_size: int
@@ -41,7 +41,7 @@ class Record(BaseModel):
             timestamp=record.timestamp,  # type: ignore
             timestamp_type=record.timestamp_type,  # type: ignore
             key=record.key,  # type: ignore
-            value=record.value,  # type: ignore
+            value=record.value.decode("utf-8"),  # type: ignore
             checksum=record.checksum,  # type: ignore
             serialized_key_size=record.serialized_key_size,  # type: ignore
             serialized_value_size=record.serialized_value_size,  # type: ignore
@@ -49,7 +49,11 @@ class Record(BaseModel):
         )
 
     def to_consumer_record(self) -> ConsumerRecord:
-        return ConsumerRecord(**self.dict())  # type: ignore
+        # We need to convert the value back into bytes before giving this back to the consumer
+        data = self.dict()
+        data["value"] = data["value"].encode("utf-8")
+
+        return ConsumerRecord(**data)  # type: ignore
 
 
 class FailureInfo(BaseModel):
