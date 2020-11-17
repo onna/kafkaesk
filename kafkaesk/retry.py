@@ -117,7 +117,7 @@ class RetryPolicy:
             await handler.finalize()
 
     async def initialize(self) -> None:
-        await asyncio.gather(*[handler.initialize() for handler in self._handlers.values()])
+        await asyncio.gather(*[handler.initialize(self) for handler in self._handlers.values()])
         self._ready = True
 
     async def finalize(self) -> None:
@@ -212,7 +212,7 @@ class RetryHandler(ABC):
 
         self._ready = False
 
-    async def initialize(self) -> None:
+    async def initialize(self, policy: RetryPolicy) -> None:
         self._ready = True
 
     async def finalize(self) -> None:
