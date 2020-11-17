@@ -88,7 +88,7 @@ class RetryPolicy:
         self._handlers = retry_handlers or {}
         self._handler_cache: Dict[Type[Exception], Tuple[str, RetryHandler]] = {}
 
-        self._initialized = False
+        self._ready = False
 
         if "RetryMessage:1" not in self.app.schemas:
             self.app.schema("RetryMessage", version=1)(RetryMessage)
@@ -99,7 +99,7 @@ class RetryPolicy:
 
         self._handlers[exception] = handler
 
-        if self._initialized is True:
+        if self._ready is True:
             await self._handlers[exception].initialize()
 
         # Clear handler cache when handler is added
@@ -118,10 +118,10 @@ class RetryPolicy:
 
     async def initialize(self) -> None:
         await asyncio.gather(*[handler.initialize() for handler in self._handlers.values()])
-        self._initialized = True
+        self._ready = True
 
     async def finalize(self) -> None:
-        self._initialized = False
+        self._ready = False
         await asyncio.gather(*[handler.finalize() for handler in self._handlers.values()])
 
     async def __call__(
@@ -130,7 +130,7 @@ class RetryPolicy:
         exception: Exception,
         retry_history: Optional[RetryHistory] = None,
     ) -> None:
-        if self._initialized is not True:
+        if self._ready is not True:
             raise RuntimeError("RetryPolicy is not initalized")
 
         with RETRY_POLICY_TIME.labels(
@@ -210,13 +210,13 @@ class RetryHandler(ABC):
     def __init__(self, stream_id: str) -> None:
         self.stream_id = stream_id
 
-        self._initialized = False
+        self._ready = False
 
     async def initialize(self) -> None:
-        self._initialized = True
+        self._ready = True
 
     async def finalize(self) -> None:
-        self._initialized = False
+        self._ready = False
 
     async def __call__(
         self,
