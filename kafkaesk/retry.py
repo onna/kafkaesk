@@ -57,7 +57,7 @@ class Record(BaseModel):
 
 
 class FailureInfo(BaseModel):
-    error: str
+    exception: str
     handler_key: str
     timestamp: datetime
 
@@ -89,23 +89,23 @@ class RetryPolicy:
         if "RetryMessage:1" not in self.app.schemas:
             self.app.schema("RetryMessage", version=1)(RetryMessage)
 
-    async def add_retry_handler(self, error: Type[Exception], handler: "RetryHandler") -> None:
-        if error in self._handlers:
-            raise ValueError(f"{error} error handler is already set")
+    async def add_retry_handler(self, exception: Type[Exception], handler: "RetryHandler") -> None:
+        if exception in self._handlers:
+            raise ValueError(f"{exception} retry handler is already set")
 
-        self._handlers[error] = handler
+        self._handlers[exception] = handler
 
         if self._initialized is True:
-            await self._handlers[error].initialize()
+            await self._handlers[exception].initialize()
 
         # Clear handler cache when handler is added
         self._handler_cache = {}
 
-    async def remove_retry_handler(self, error: Type[Exception]) -> None:
-        if error in self._handlers:
-            handler = self._handlers[error]
+    async def remove_retry_handler(self, exception: Type[Exception]) -> None:
+        if exception in self._handlers:
+            handler = self._handlers[exception]
 
-            del self._handlers[error]
+            del self._handlers[exception]
 
             # Clear handler cache when handler is removed
             self._handler_cache = {}
@@ -123,16 +123,16 @@ class RetryPolicy:
     async def __call__(
         self,
         record: ConsumerRecord,
-        error: Exception,
+        exception: Exception,
         retry_history: Optional[RetryHistory] = None,
     ) -> None:
         if self._initialized is not True:
             raise RuntimeError("RetryPolicy is not initalized")
 
-        handler_key, handler = self._get_handler(error)
+        handler_key, handler = self._get_handler(exception)
 
         if handler is None or handler_key is None:
-            raise error from error
+            raise exception from exception
 
         if retry_history is None:
             retry_history = RetryHistory()
@@ -140,29 +140,31 @@ class RetryPolicy:
         # Add information about this failure to the history
         retry_history.failures.append(
             FailureInfo(
-                error=error.__class__.__name__, handler_key=handler_key, timestamp=datetime.now()
+                exception=exception.__class__.__name__,
+                handler_key=handler_key,
+                timestamp=datetime.now(),
             )
         )
 
-        await handler(self, handler_key, retry_history, record, error)
+        await handler(self, handler_key, retry_history, record, exception)
 
-    def _get_handler(self, error: Exception) -> Tuple[Optional[str], Optional["RetryHandler"]]:
-        error_type = error.__class__
+    def _get_handler(self, exception: Exception) -> Tuple[Optional[str], Optional["RetryHandler"]]:
+        exception_type = exception.__class__
 
-        handler_key, handler = self._handler_cache.get(error_type, (None, None))
+        handler_key, handler = self._handler_cache.get(exception_type, (None, None))
 
         if handler is None:
-            handler = self._handlers.get(error_type)
+            handler = self._handlers.get(exception_type)
             if handler is not None:
-                handler_key = error_type.__name__
-                self._handler_cache[error_type] = (handler_key, handler)
+                handler_key = exception_type.__name__
+                self._handler_cache[exception_type] = (handler_key, handler)
 
         if handler is None:
-            for handler_error_type in self._handlers.keys():
-                if isinstance(error, handler_error_type):
-                    handler = self._handlers[handler_error_type]
-                    handler_key = handler_error_type.__name__
-                    self._handler_cache[error_type] = (handler_key, handler)
+            for handler_exception_type in self._handlers.keys():
+                if isinstance(exception, handler_exception_type):
+                    handler = self._handlers[handler_exception_type]
+                    handler_key = handler_exception_type.__name__
+                    self._handler_cache[exception_type] = (handler_key, handler)
                     break
 
         return (handler_key, handler)
@@ -186,7 +188,7 @@ class RetryHandler(ABC):
         handler_key: str,
         retry_history: RetryHistory,
         record: ConsumerRecord,
-        error: Exception,
+        exception: Exception,
     ) -> None:
         raise NotImplementedError
 
@@ -198,9 +200,9 @@ class NoRetry(RetryHandler):
         handler_key: str,
         retry_history: RetryHistory,
         record: ConsumerRecord,
-        error: Exception,
+        exception: Exception,
     ) -> None:
-        logger.info("NoRetry handler recieved exception, dropping message", exc_info=error)
+        logger.info("NoRetry handler recieved exception, dropping message", exc_info=exception)
 
 
 class Forward(RetryHandler):
@@ -210,7 +212,7 @@ class Forward(RetryHandler):
         handler_key: str,
         retry_history: RetryHistory,
         record: ConsumerRecord,
-        error: Exception,
+        exception: Exception,
     ) -> None:
         await policy.app.publish(
             self.stream_id,

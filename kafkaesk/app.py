@@ -261,7 +261,7 @@ class SubscriptionConsumer:
                         error=err.__class__.__name__,
                         group_id=self._subscription.group,
                     ).inc()
-                    await retry_policy(record=record, error=err)
+                    await retry_policy(record=record, exception=err)
                 finally:
                     context.span.finish()
                     context.close()

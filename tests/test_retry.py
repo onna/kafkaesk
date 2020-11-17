@@ -42,7 +42,7 @@ async def test_retry_message_is_serializable(record: ConsumerRecord) -> None:
     retry_history = retry.RetryHistory()
     retry_history.failures.append(
         retry.FailureInfo(
-            error="UnhandledMessage", handler_key="Exception", timestamp=datetime.now()
+            exception="UnhandledMessage", handler_key="Exception", timestamp=datetime.now()
         )
     )
     retry_message = retry.RetryMessage(
@@ -58,33 +58,33 @@ async def test_retry_message_is_serializable(record: ConsumerRecord) -> None:
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -> None:
     policy = retry.RetryPolicy(app, kafkaesk.app.Subscription("foobar", NOOPCallback, "group"))
-    error = NOOPException()
+    exception = NOOPException()
 
     # Check that policy errors if not initailized
     with pytest.raises(RuntimeError):
-        await policy(record, error)
+        await policy(record, exception)
 
     await policy.initialize()
 
     # Check that un-configured exceptions are re-raised
     with pytest.raises(NOOPException):
-        await policy(record, error)
+        await policy(record, exception)
 
     # Check that configured exceptions are handled
     handler_mock = AsyncMock()
     await policy.add_retry_handler(NOOPException, handler_mock)
-    await policy(record, error)
+    await policy(record, exception)
     handler_mock.assert_awaited_once()
 
     # Check that configured exceptions can be removed
     await policy.remove_retry_handler(NOOPException)
     with pytest.raises(NOOPException):
-        await policy(record, error)
+        await policy(record, exception)
 
     # Check that a configured exception handles inherited exceptions
     handler_mock = AsyncMock()
     await policy.add_retry_handler(Exception, handler_mock)
-    await policy(record, error)
+    await policy(record, exception)
     handler_mock.assert_awaited_once()
 
     # Check that the passed handler key matches the configured handler
@@ -93,21 +93,21 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
 
 
 async def test_noretry_handler(record: ConsumerRecord) -> None:
-    error = NOOPException()
+    exception = NOOPException()
     retry_history = retry.RetryHistory()
 
     noretry = retry.NoRetry("Dummy")
-    await noretry(None, "NOOPException", retry_history, record, error)
+    await noretry(None, "NOOPException", retry_history, record, exception)
 
 
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_forward_handler(record: ConsumerRecord) -> None:
     policy = AsyncMock()
-    error = NOOPException()
+    exception = NOOPException()
     retry_history = retry.RetryHistory()
 
     forward = retry.Forward("test_stream")
-    await forward(policy, "NOOPException", retry_history, record, error)
+    await forward(policy, "NOOPException", retry_history, record, exception)
 
     policy.app.publish.assert_awaited_once()
     assert policy.app.publish.await_args[0][0] == "test_stream"
