@@ -1,6 +1,7 @@
 from aiokafka.structs import ConsumerRecord
 from datetime import datetime
 from kafkaesk import retry
+from unittest.mock import patch
 
 import kafkaesk
 import pytest
@@ -67,14 +68,49 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
     await policy.initialize()
 
     # Check that un-configured exceptions are re-raised
-    with pytest.raises(NOOPException):
+    with pytest.raises(NOOPException), patch("kafkaesk.retry.RETRY_POLICY",) as metric_mock, patch(
+        "kafkaesk.retry.RETRY_POLICY_TIME",
+    ) as metric_time_mock:
         await policy(record, exception)
+
+        # Time Metric
+        metric_time_mock.labels.assert_called_with(
+            stream_id=record.topic, partition=record.partition, group_id="group"
+        )
+        metric_time_mock.labels.return_value.time.return_value.__enter__.assert_called_once()
+        # Count Metric
+        metric_mock.labels.assert_called_with(
+            stream_id=record.topic,
+            partition=record.partition,
+            group_id="group",
+            handler=None,
+            exception="NOOPException",
+        )
+        metric_mock.labels.return_value.inc.assert_called_once()
 
     # Check that configured exceptions are handled
     handler_mock = AsyncMock()
     await policy.add_retry_handler(NOOPException, handler_mock)
-    await policy(record, exception)
-    handler_mock.assert_awaited_once()
+    with patch("kafkaesk.retry.RETRY_POLICY",) as metric_mock, patch(
+        "kafkaesk.retry.RETRY_POLICY_TIME",
+    ) as metric_time_mock:
+        await policy(record, exception)
+        handler_mock.assert_awaited_once()
+
+        # Time Metric
+        metric_time_mock.labels.assert_called_with(
+            stream_id=record.topic, partition=record.partition, group_id="group"
+        )
+        metric_time_mock.labels.return_value.time.return_value.__enter__.assert_called_once()
+        # Count Metric
+        metric_mock.labels.assert_called_with(
+            stream_id=record.topic,
+            partition=record.partition,
+            group_id="group",
+            handler="AsyncMock",
+            exception="NOOPException",
+        )
+        metric_mock.labels.return_value.inc.assert_called_once()
 
     # Check that configured exceptions can be removed
     await policy.remove_retry_handler(NOOPException)
@@ -92,12 +128,57 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
     assert handler_mock.await_args[0][1] == "Exception"
 
 
+async def test_retry_handler(record: ConsumerRecord) -> None:
+    class NOOPHandler(retry.RetryHandler):
+        ...
+
+    policy = AsyncMock()
+    policy.subscription.group = "test_group"
+    handler = NOOPHandler("test_stream")
+    retry_history = retry.RetryHistory()
+    exception = NOOPException()
+
+    # Test Drop Message
+    with patch("kafkaesk.retry.RETRY_HANDLER_DROP") as metric_mock:
+        await handler._drop_message(policy, retry_history, record, exception)
+
+        metric_mock.labels.assert_called_with(
+            stream_id="foobar",
+            partition=0,
+            group_id="test_group",
+            handler="NOOPHandler",
+            exception="NOOPException",
+        )
+        metric_mock.labels.return_value.inc.assert_called_once()
+
+    # Test Forward Message
+    with patch("kafkaesk.retry.RETRY_HANDLER_FORWARD") as metric_mock:
+        await handler._forward_message(
+            policy, retry_history, record, exception, "forward_stream_id"
+        )
+
+        metric_mock.labels.assert_called_with(
+            stream_id="foobar",
+            partition=0,
+            group_id="test_group",
+            handler="NOOPHandler",
+            exception="NOOPException",
+            forward_stream_id="forward_stream_id",
+        )
+        metric_mock.labels.return_value.inc.assert_called_once()
+
+        # Make sure publish was called
+        policy.app.publish.assert_awaited_once()
+
+
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_noretry_handler(record: ConsumerRecord) -> None:
+    policy = AsyncMock()
     exception = NOOPException()
     retry_history = retry.RetryHistory()
 
-    noretry = retry.NoRetry("Dummy")
-    await noretry(None, "NOOPException", retry_history, record, exception)
+    noretry = retry.NoRetry("test_stream")
+    await noretry(policy, "NOOPException", retry_history, record, exception)
 
 
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
