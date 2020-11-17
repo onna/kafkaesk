@@ -271,7 +271,7 @@ class RetryHandler(ABC):
         ).inc()
 
 
-class NoRetry(RetryHandler):
+class Drop(RetryHandler):
     async def __call__(
         self,
         policy: RetryPolicy,

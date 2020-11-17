@@ -173,12 +173,12 @@ async def test_retry_handler(record: ConsumerRecord) -> None:
 
 
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
-async def test_noretry_handler(record: ConsumerRecord) -> None:
+async def test_drop_handler(record: ConsumerRecord) -> None:
     policy = AsyncMock()
     exception = NOOPException()
     retry_history = retry.RetryHistory()
 
-    noretry = retry.NoRetry("test_stream")
+    noretry = retry.Drop("test_stream")
     await noretry(policy, "NOOPException", retry_history, record, exception)
 
 
