@@ -100,7 +100,7 @@ class RetryPolicy:
         self._handlers[exception] = handler
 
         if self._ready is True:
-            await self._handlers[exception].initialize()
+            await self._handlers[exception].initialize(self)
 
         # Clear handler cache when handler is added
         self._handler_cache = {}

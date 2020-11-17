@@ -128,6 +128,7 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
     assert handler_mock.await_args[0][1] == "Exception"
 
 
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_retry_handler(record: ConsumerRecord) -> None:
     class NOOPHandler(retry.RetryHandler):
         ...
