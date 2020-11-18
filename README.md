@@ -49,12 +49,35 @@ class ContentMessage(BaseModel):
     foo: str
 
 
-@app.subscribe('content.*')
+@app.subscribe('content.*', 'group_id')
 async def get_messages(data: ContentMessage):
     print(f"{data.foo}")
 
 ```
 
+
+### Retry
+
+Clients may configure a subscriber with different retry behaviors depending on what exception was raised by the subscription callback. Subscriptions accept a dictionary of `Exception` types and `kafkaesk.retry.RetryHandler`s as an argument when registered.
+
+The default `RetryHandler` is `kafkaesk.retry.Raise`. The `Raise` handler will cause the exception to be re-raised and terminate the subscriber.
+
+```python
+import kafkaesk
+from pydantic import BaseModel
+
+app = kafkaesk.Application()
+
+@app.schema("Content", version=1, retention=24 * 60 * 60)
+class ContentMessage(BaseModel):
+    foo: str
+
+
+@app.subscribe("content.*", "group_id", {Exception: kafkaesk.retry.Forward("dlx.content")})
+async def get_messages(data: ContentMessage):
+    raise Exception("UnhandledException")
+
+```
 
 ## Avoiding global object
 
