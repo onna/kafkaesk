@@ -1,5 +1,6 @@
 from .metrics import RETRY_HANDLER_DROP
 from .metrics import RETRY_HANDLER_FORWARD
+from .metrics import RETRY_HANDLER_RAISE
 from .metrics import RETRY_POLICY
 from .metrics import RETRY_POLICY_TIME
 from abc import ABC
@@ -85,6 +86,8 @@ class RetryPolicy:
         self.app = app
         self.subscription = subscription
 
+        self._default_handler: "RetryHandler" = Raise()
+
         self._handlers = retry_handlers or {}
         self._handler_cache: Dict[Type[Exception], Tuple[str, RetryHandler]] = {}
 
@@ -154,17 +157,6 @@ class RetryPolicy:
         ).time():
             handler_key, handler = self._get_handler(exception)
 
-            if handler is None or handler_key is None:
-                self.logger.info(f"No retry handler configured for {exception.__class__.__name__}")
-                RETRY_POLICY.labels(
-                    stream_id=record.topic,
-                    partition=record.partition,
-                    group_id=self.subscription.group,
-                    handler=None,
-                    exception=exception.__class__.__name__,
-                ).inc()
-                raise exception from exception
-
             if retry_history is None:
                 retry_history = RetryHistory()
 
@@ -177,16 +169,18 @@ class RetryPolicy:
                 )
             )
 
-            await handler(self, handler_key, retry_history, record, exception)
-            RETRY_POLICY.labels(
-                stream_id=record.topic,
-                partition=record.partition,
-                group_id=self.subscription.group,
-                handler=handler.__class__.__name__,
-                exception=exception.__class__.__name__,
-            ).inc()
+            try:
+                await handler(self, handler_key, retry_history, record, exception)
+            finally:
+                RETRY_POLICY.labels(
+                    stream_id=record.topic,
+                    partition=record.partition,
+                    group_id=self.subscription.group,
+                    handler=handler.__class__.__name__,
+                    exception=exception.__class__.__name__,
+                ).inc()
 
-    def _get_handler(self, exception: Exception) -> Tuple[Optional[str], Optional["RetryHandler"]]:
+    def _get_handler(self, exception: Exception) -> Tuple[str, "RetryHandler"]:
         exception_type = exception.__class__
 
         handler_key, handler = self._handler_cache.get(exception_type, (None, None))
@@ -204,6 +198,13 @@ class RetryPolicy:
                     handler_key = handler_exception_type.__name__
                     self._handler_cache[exception_type] = (handler_key, handler)
                     break
+
+        # Return the default handler
+        if handler is None:
+            handler = self._default_handler
+
+        if handler_key is None:
+            handler_key = "Exception"
 
         return (handler_key, handler)
 
@@ -226,9 +227,7 @@ class RetryHandler(ABC):
 
     logger = logging.getLogger("kafkaesk.retry.retry_handler")
 
-    def __init__(self, stream_id: str) -> None:
-        self.stream_id = stream_id
-
+    def __init__(self) -> None:
         self._ready = False
 
     async def initialize(self, policy: RetryPolicy) -> None:
@@ -248,6 +247,25 @@ class RetryHandler(ABC):
         exception: Exception,
     ) -> None:
         raise NotImplementedError
+
+    async def _raise_message(
+        self,
+        policy: RetryPolicy,
+        retry_history: RetryHistory,
+        record: ConsumerRecord,
+        exception: Exception,
+    ) -> None:
+        self.logger.critical(
+            f"{self.__class__.__name__} handler recieved exception, re-raising exception {record}"
+        )
+        RETRY_HANDLER_RAISE.labels(
+            stream_id=record.topic,
+            partition=record.partition,
+            group_id=policy.subscription.group,
+            handler=self.__class__.__name__,
+            exception=exception.__class__.__name__,
+        ).inc()
+        raise exception from exception
 
     async def _drop_message(
         self,
@@ -295,6 +313,18 @@ class RetryHandler(ABC):
         ).inc()
 
 
+class Raise(RetryHandler):
+    async def __call__(
+        self,
+        policy: RetryPolicy,
+        handler_key: str,
+        retry_history: RetryHistory,
+        record: ConsumerRecord,
+        exception: Exception,
+    ) -> None:
+        await self._raise_message(policy, retry_history, record, exception)
+
+
 class Drop(RetryHandler):
     async def __call__(
         self,
@@ -308,6 +338,11 @@ class Drop(RetryHandler):
 
 
 class Forward(RetryHandler):
+    def __init__(self, stream_id: str):
+
+        self.stream_id = stream_id
+        super().__init__()
+
     async def __call__(
         self,
         policy: RetryPolicy,

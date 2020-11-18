@@ -68,6 +68,12 @@ RETRY_HANDLER_DROP = client.Counter(
     ["stream_id", "group_id", "partition", "handler", "exception"],
 )
 
+RETRY_HANDLER_RAISE = client.Counter(
+    "kafkaesk_retry_handler_raise",
+    "Number of times the retry handler raised a message exception",
+    ["stream_id", "group_id", "partition", "handler", "exception"],
+)
+
 RETRY_CONSUMER_TOPIC_OFFSET = client.Gauge(
     "kafkaesk_retry_consumed_topic_offset",
     "Offset for consumed messages in a retry topic",

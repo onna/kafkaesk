@@ -135,16 +135,39 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
     assert handler_mock.await_args[0][1] == "Exception"
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
+async def test_retry_policy_default_handler(app: kafkaesk.Application) -> None:
+    policy = retry.RetryPolicy(app, kafkaesk.app.Subscription("foobar", NOOPCallback, "group"))
+
+    handler_key, handler = policy._get_handler(NOOPException())
+
+    assert handler_key == "Exception"
+    assert isinstance(handler, retry.Raise)
+
+
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_retry_handler(record: ConsumerRecord) -> None:
     class NOOPHandler(retry.RetryHandler):
         ...
 
     policy = AsyncMock()
     policy.subscription.group = "test_group"
-    handler = NOOPHandler("test_stream")
+    handler = NOOPHandler()
     retry_history = retry.RetryHistory()
     exception = NOOPException()
+
+    # Test Raise Message
+    with patch("kafkaesk.retry.RETRY_HANDLER_RAISE") as metric_mock:
+        with pytest.raises(NOOPException):
+            await handler._raise_message(policy, retry_history, record, exception)
+
+        metric_mock.labels.assert_called_with(
+            stream_id="foobar",
+            partition=0,
+            group_id="test_group",
+            handler="NOOPHandler",
+            exception="NOOPException",
+        )
+        metric_mock.labels.return_value.inc.assert_called_once()
 
     # Test Drop Message
     with patch("kafkaesk.retry.RETRY_HANDLER_DROP") as metric_mock:
@@ -180,12 +203,23 @@ async def test_retry_handler(record: ConsumerRecord) -> None:
 
 
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
+async def test_raise_handler(record: ConsumerRecord) -> None:
+    policy = AsyncMock()
+    exception = NOOPException()
+    retry_history = retry.RetryHistory()
+
+    raise_handler = retry.Raise()
+    with pytest.raises(NOOPException):
+        await raise_handler(policy, "Exception", retry_history, record, exception)
+
+
+@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_drop_handler(record: ConsumerRecord) -> None:
     policy = AsyncMock()
     exception = NOOPException()
     retry_history = retry.RetryHistory()
 
-    noretry = retry.Drop("test_stream")
+    noretry = retry.Drop()
     await noretry(policy, "NOOPException", retry_history, record, exception)
 
 
