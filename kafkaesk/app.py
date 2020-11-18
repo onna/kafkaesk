@@ -268,7 +268,10 @@ class SubscriptionConsumer:
                     await self.emit("message", record=record)
         finally:
             # Shutdown the retry policy
-            await retry_policy.finalize()
+            try:
+                await retry_policy.finalize()
+            except Exception:
+                logger.info("Cound not properly stop retry policy", exc_info=True)
             try:
                 await self._consumer.commit()
             except Exception:

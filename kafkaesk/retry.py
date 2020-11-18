@@ -20,8 +20,6 @@ if TYPE_CHECKING is True:
     from .app import Application
     from .app import Subscription
 
-logger = logging.getLogger("kafkaesk.retry")
-
 
 class Record(BaseModel):
     topic: str
@@ -76,6 +74,8 @@ class RetryMessage(BaseModel):
 
 
 class RetryPolicy:
+    logger = logging.getLogger("kafkaesk.retry.retry_policy")
+
     def __init__(
         self,
         app: "Application",
@@ -98,9 +98,15 @@ class RetryPolicy:
             raise ValueError(f"{exception} retry handler is already set")
 
         self._handlers[exception] = handler
+        self.logger.debug(
+            f"Retry policy added new handler {handler.__class__.__name__} for {exception}"
+        )
 
         if self._ready is True:
             await self._handlers[exception].initialize(self)
+            self.logger.debug(
+                f"Retry policy initialized retry handler {handler.__class__.__name__}"
+            )
 
         # Clear handler cache when handler is added
         self._handler_cache = {}
@@ -110,19 +116,27 @@ class RetryPolicy:
             handler = self._handlers[exception]
 
             del self._handlers[exception]
+            self.logger.debug(
+                f"Retry policy removed handler {handler.__class__.__name__} for {exception}"
+            )
 
             # Clear handler cache when handler is removed
             self._handler_cache = {}
 
             await handler.finalize()
+            self.logger.debug(f"Retry policy finalized retry handler {handler.__class__.__name__}")
 
     async def initialize(self) -> None:
+        self.logger.debug("Retry policy initializing retry handlers...")
         await asyncio.gather(*[handler.initialize(self) for handler in self._handlers.values()])
+        self.logger.debug("Retry policy initialized")
         self._ready = True
 
     async def finalize(self) -> None:
         self._ready = False
+        self.logger.debug("Retry policy finalizing retry handlers...")
         await asyncio.gather(*[handler.finalize() for handler in self._handlers.values()])
+        self.logger.debug("Retry policy finalized")
 
     async def __call__(
         self,
@@ -133,12 +147,15 @@ class RetryPolicy:
         if self._ready is not True:
             raise RuntimeError("RetryPolicy is not initalized")
 
+        self.logger.debug(f"Handling msg retry: {record} {exception}")
+
         with RETRY_POLICY_TIME.labels(
             stream_id=record.topic, partition=record.partition, group_id=self.subscription.group,
         ).time():
             handler_key, handler = self._get_handler(exception)
 
             if handler is None or handler_key is None:
+                self.logger.info(f"No retry handler configured for {exception.__class__.__name__}")
                 RETRY_POLICY.labels(
                     stream_id=record.topic,
                     partition=record.partition,
@@ -207,15 +224,19 @@ class RetryHandler(ABC):
     See `kafkaesk.metrics` for more information on each of these metrics
     """
 
+    logger = logging.getLogger("kafkaesk.retry.retry_handler")
+
     def __init__(self, stream_id: str) -> None:
         self.stream_id = stream_id
 
         self._ready = False
 
     async def initialize(self, policy: RetryPolicy) -> None:
+        self.logger.debug(f"{self.__class__.__name__} retry handler initialized")
         self._ready = True
 
     async def finalize(self) -> None:
+        self.logger.debug(f"{self.__class__.__name__} retry handler finalized")
         self._ready = False
 
     async def __call__(
@@ -235,8 +256,8 @@ class RetryHandler(ABC):
         record: ConsumerRecord,
         exception: Exception,
     ) -> None:
-        logger.info(
-            f"{self.__class__.__name__} handler recieved exception, dropping message",
+        self.logger.warn(
+            f"{self.__class__.__name__} handler recieved exception, dropping message {record}",
             exc_info=exception,
         )
         RETRY_HANDLER_DROP.labels(
@@ -255,6 +276,9 @@ class RetryHandler(ABC):
         exception: Exception,
         forward_stream_id: str,
     ) -> None:
+        self.logger.info(
+            f"{self.__class__.__name__} handler forwarding message to {forward_stream_id}: {record}"
+        )
         await policy.app.publish(
             forward_stream_id,
             RetryMessage(
