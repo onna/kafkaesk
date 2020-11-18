@@ -270,10 +270,6 @@ class SubscriptionConsumer:
             except Exception:
                 logger.info("Cound not properly stop retry policy", exc_info=True)
             try:
-                await self._consumer.commit()
-            except Exception:
-                logger.info("Could not commit current offsets", exc_info=True)
-            try:
                 await self._consumer.stop()
             except Exception:
                 logger.warning("Could not properly stop consumer", exc_info=True)
