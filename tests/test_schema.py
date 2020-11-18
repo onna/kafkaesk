@@ -1,8 +1,6 @@
 import pydantic
 import pytest
-from kafkaesk.exceptions import (
-    SchemaConflictException
-)
+from kafkaesk.exceptions import SchemaConflictException
 
 pytestmark = pytest.mark.asyncio
 

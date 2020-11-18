@@ -2,6 +2,7 @@ from aiokafka import ConsumerRecord
 from kafkaesk.kafka import KafkaTopicManager
 from kafkaesk.retry import Forward
 from unittest.mock import Mock
+from unittest.mock import call
 from unittest.mock import patch
 
 import asyncio
@@ -287,3 +288,44 @@ async def test_subscription_calls_retry_policy(app):
         await fut
 
     handler_mock.assert_awaited_once()
+
+
+async def test_subscription_failure(app):
+    probe = Mock()
+
+    @app.schema("Foo", version=1)
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar", group="test_group")
+    async def noop(data: Foo):
+        probe("error", data)
+        raise Exception("Unhandled Exception")
+
+    async with app:
+        fut = asyncio.create_task(app.consume_for(1, seconds=5))
+        await asyncio.sleep(0.2)
+
+        await app.publish("foo.bar", Foo(bar=1))
+        await app.flush()
+        await fut
+
+    # remove wrong consumer
+    app._subscriptions = []
+
+    @app.subscribe("foo.bar", group="test_group")
+    async def noop_ok(data: Foo):
+        probe("ok", data)
+
+    async with app:
+        fut = asyncio.create_task(app.consume_for(2, seconds=5))
+        await asyncio.sleep(0.5)
+
+        await app.publish("foo.bar", Foo(bar=2))
+        await app.flush()
+
+        await fut
+
+    probe.assert_has_calls(
+        [call("error", Foo(bar="1")), call("ok", Foo(bar="2")), call("ok", Foo(bar="1"))]
+    )
