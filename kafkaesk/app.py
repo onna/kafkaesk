@@ -646,17 +646,6 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
                 # and it's unclear if this is always right decision
                 await self.consumer.seek_to_beginning(tp)
 
-            # go back one message since we have auto_commit = true
-            # try:
-            #     position = await self.consumer.position(tp)
-            #     offset = position - 1
-            # except aiokafka.errors.IllegalStateError:
-            #     offset = -1
-            # if offset > 0:
-            #     self.consumer.seek(tp, offset)
-            # else:
-            #     await self.consumer.seek_to_beginning(tp)
-
 
 cli_parser = argparse.ArgumentParser(description="Run kafkaesk worker.")
 cli_parser.add_argument("app", help="Application object")
