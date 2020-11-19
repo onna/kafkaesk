@@ -73,7 +73,7 @@ class ContentMessage(BaseModel):
     foo: str
 
 
-@app.subscribe("content.*", "group_id", {Exception: kafkaesk.retry.Forward("dlx.content")})
+@app.subscribe("content.*", "group_id", retry_handlers={Exception: kafkaesk.retry.Forward("dlx.content")})
 async def get_messages(data: ContentMessage):
     raise Exception("UnhandledException")
 

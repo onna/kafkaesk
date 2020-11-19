@@ -53,6 +53,7 @@ class Subscription:
         stream_id: str,
         func: Callable,
         group: str,
+        *,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ):
         self.stream_id = stream_id
@@ -314,6 +315,7 @@ class Router:
         self,
         stream_id: str,
         group: str,
+        *,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ) -> Callable:
         def inner(func: Callable) -> Callable:
