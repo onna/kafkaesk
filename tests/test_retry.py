@@ -93,7 +93,13 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
 
     # Check that configured exceptions are handled
     handler_mock = AsyncMock()
-    await policy.add_retry_handler(NOOPException, handler_mock)
+    policy = retry.RetryPolicy(
+        app,
+        kafkaesk.app.Subscription(
+            "foobar", NOOPCallback, "group", retry_handlers={NOOPException: handler_mock}
+        ),
+    )
+    await policy.initialize()
     with patch("kafkaesk.retry.RETRY_POLICY",) as metric_mock, patch(
         "kafkaesk.retry.RETRY_POLICY_TIME",
     ) as metric_time_mock:
@@ -115,18 +121,15 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
         )
         metric_mock.labels.return_value.inc.assert_called_once()
 
-    # Check that multiple handlers may not be registered for an exception
-    with pytest.raises(ValueError):
-        await policy.add_retry_handler(NOOPException, handler_mock)
-
-    # Check that configured exceptions can be removed
-    await policy.remove_retry_handler(NOOPException)
-    with pytest.raises(NOOPException):
-        await policy(record, exception)
-
     # Check that a configured exception handles inherited exceptions
     handler_mock = AsyncMock()
-    await policy.add_retry_handler(Exception, handler_mock)
+    policy = retry.RetryPolicy(
+        app,
+        kafkaesk.app.Subscription(
+            "foobar", NOOPCallback, "group", retry_handlers={Exception: handler_mock}
+        ),
+    )
+    await policy.initialize()
     await policy(record, exception)
     handler_mock.assert_awaited_once()
 

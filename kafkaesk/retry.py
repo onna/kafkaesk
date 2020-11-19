@@ -78,56 +78,20 @@ class RetryPolicy:
     logger = logging.getLogger("kafkaesk.retry.retry_policy")
 
     def __init__(
-        self,
-        app: "Application",
-        subscription: "Subscription",
-        retry_handlers: Optional[Dict[Type[Exception], "RetryHandler"]] = None,
+        self, app: "Application", subscription: "Subscription",
     ):
         self.app = app
         self.subscription = subscription
 
         self._default_handler: "RetryHandler" = Raise()
 
-        self._handlers = retry_handlers or {}
+        self._handlers = self.subscription.retry_handlers or {}
         self._handler_cache: Dict[Type[Exception], Tuple[str, RetryHandler]] = {}
 
         self._ready = False
 
         if "RetryMessage:1" not in self.app.schemas:
             self.app.schema("RetryMessage", version=1)(RetryMessage)
-
-    async def add_retry_handler(self, exception: Type[Exception], handler: "RetryHandler") -> None:
-        if exception in self._handlers:
-            raise ValueError(f"{exception} retry handler is already set")
-
-        self._handlers[exception] = handler
-        self.logger.debug(
-            f"Retry policy added new handler {handler.__class__.__name__} for {exception}"
-        )
-
-        if self._ready is True:
-            await self._handlers[exception].initialize(self)
-            self.logger.debug(
-                f"Retry policy initialized retry handler {handler.__class__.__name__}"
-            )
-
-        # Clear handler cache when handler is added
-        self._handler_cache = {}
-
-    async def remove_retry_handler(self, exception: Type[Exception]) -> None:
-        if exception in self._handlers:
-            handler = self._handlers[exception]
-
-            del self._handlers[exception]
-            self.logger.debug(
-                f"Retry policy removed handler {handler.__class__.__name__} for {exception}"
-            )
-
-            # Clear handler cache when handler is removed
-            self._handler_cache = {}
-
-            await handler.finalize()
-            self.logger.debug(f"Retry policy finalized retry handler {handler.__class__.__name__}")
 
     async def initialize(self) -> None:
         self.logger.debug("Retry policy initializing retry handlers...")

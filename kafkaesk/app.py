@@ -174,11 +174,7 @@ class SubscriptionConsumer:
         self._consumer.subscribe(pattern=pattern, listener=listener)
 
         # Initialize subscribers retry policy
-        retry_policy = RetryPolicy(
-            app=self._app,
-            subscription=self._subscription,
-            retry_handlers=self._subscription.retry_handlers,
-        )
+        retry_policy = RetryPolicy(app=self._app, subscription=self._subscription,)
         await retry_policy.initialize()
 
         await self._consumer.start()
