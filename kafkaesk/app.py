@@ -267,7 +267,7 @@ class SubscriptionConsumer:
             # Move the offset one position back so the failed message will be
             # reprocessed.
             tp = aiokafka.TopicPartition(record.topic, record.partition)
-            pos = self._consumer._subscription._assigned_state(tp).position
+            pos = self._consumer._subscription._assigned_state(tp).position  # type: ignore
             self._consumer.seek(tp, pos - 1)
             raise exc
         finally:
