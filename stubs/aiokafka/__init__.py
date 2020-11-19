@@ -62,6 +62,9 @@ class AIOKafkaConsumer:
     ):
         ...
 
+    async def getone(self, *partitions: Optional[List[TopicPartition]]) -> ConsumerRecord:
+        ...
+
     async def subscribe(
         self, pattern: Optional[str] = None, listener: Optional["ConsumerRebalanceListener"] = None
     ) -> None:

@@ -165,7 +165,7 @@ class SubscriptionConsumer:
             loop=asyncio.get_event_loop(),
             group_id=self._subscription.group,
             api_version=self._app._kafka_api_version,
-            enable_auto_commit=True,
+            enable_auto_commit=False,
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
@@ -195,7 +195,9 @@ class SubscriptionConsumer:
         await self.emit("started", subscription_consumer=self)
         try:
             # Consume messages
-            async for record in self._consumer:
+            while True:
+                record = await self._consumer.getone()
+
                 tracer = opentracing.tracer
                 headers = {x[0]: x[1].decode() for x in record.headers or []}
                 parent = tracer.extract(opentracing.Format.TEXT_MAP, headers)
@@ -260,16 +262,14 @@ class SubscriptionConsumer:
                         group_id=self._subscription.group,
                     ).inc()
                     await retry_policy(record=record, exception=err)
+                except aiokafka.errors.ConsumerStoppedError:
+                    # Consumer is closed
+                    pass
+                else:
+                    self._consumer.commit()
                 finally:
                     context.close()
                     await self.emit("message", record=record)
-        except Exception as exc:
-            # Move the offset one position back so the failed message will be
-            # reprocessed.
-            tp = aiokafka.TopicPartition(record.topic, record.partition)
-            pos = self._consumer._subscription._assigned_state(tp).position  # type: ignore
-            self._consumer.seek(tp, pos - 1)
-            raise exc
         finally:
             # Shutdown the retry policy
             try:
