@@ -22,6 +22,9 @@ if TYPE_CHECKING is True:
     from .app import Subscription
 
 
+RETRY_HISTORY_FAILURES_MAX_SIZE = 10
+
+
 class Record(BaseModel):
     topic: str
     partition: int
@@ -132,6 +135,9 @@ class RetryPolicy:
                     timestamp=datetime.now(),
                 )
             )
+            # Enforce a maximum number of failures kept
+            if len(retry_history.failures) > RETRY_HISTORY_FAILURES_MAX_SIZE:
+                retry_history.failures = retry_history.failures[-RETRY_HISTORY_FAILURES_MAX_SIZE:]
 
             try:
                 await handler(self, handler_key, retry_history, record, exception)

@@ -138,6 +138,28 @@ async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -
     assert handler_mock.await_args[0][1] == "Exception"
 
 
+async def test_retry_policy_truncates_retry_history_failures(
+    app: kafkaesk.Application, record: ConsumerRecord
+) -> None:
+    policy = retry.RetryPolicy(app, kafkaesk.app.Subscription("foobar", NOOPCallback, "group"))
+    await policy.initialize()
+
+    exception = NOOPException()
+    retry_history = retry.RetryHistory(
+        failures=[
+            retry.FailureInfo(exception=str(x), handler_key="Exception", timestamp=datetime.now())
+            for x in range(10)
+        ]
+    )
+
+    with pytest.raises(NOOPException):
+        await policy(record, exception, retry_history=retry_history)
+
+    assert len(retry_history.failures) == 10
+    assert retry_history.failures[0].exception == "1"
+    assert retry_history.failures[-1].exception == "NOOPException"
+
+
 async def test_retry_policy_default_handler(app: kafkaesk.Application) -> None:
     policy = retry.RetryPolicy(app, kafkaesk.app.Subscription("foobar", NOOPCallback, "group"))
 
