@@ -165,6 +165,7 @@ class SubscriptionConsumer:
             loop=asyncio.get_event_loop(),
             group_id=self._subscription.group,
             api_version=self._app._kafka_api_version,
+            enable_auto_commit=True,
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
@@ -263,6 +264,13 @@ class SubscriptionConsumer:
                     context.span.finish()
                     context.close()
                     await self.emit("message", record=record)
+        except Exception as exc:
+            # Move the offset one position back so the failed message will be
+            # reprocessed.
+            tp = aiokafka.TopicPartition(record.topic, record.partition)
+            pos = await self._consumer.position(tp)
+            self._consumer.seek(tp, pos - 1)
+            raise exc
         finally:
             # Shutdown the retry policy
             try:
@@ -638,8 +646,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
                 # and it's unclear if this is always right decision
                 await self.consumer.seek_to_beginning(tp)
 
-            # XXX go back one message
-            # unclear if this is what we want to do...
+            # go back one message since we have auto_commit = true
             # try:
             #     position = await self.consumer.position(tp)
             #     offset = position - 1

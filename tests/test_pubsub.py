@@ -303,13 +303,16 @@ async def test_subscription_failure(app):
         raise Exception("Unhandled Exception")
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(1, seconds=5))
-        await asyncio.sleep(0.2)
+        fut = asyncio.create_task(app.consume_for(2, seconds=5))
+        await asyncio.sleep(0.5)
 
         await app.publish("foo.bar", Foo(bar=1))
         await app.publish("foo.bar", Foo(bar=1))
         await app.flush()
-        await fut
+
+        # it fails
+        with pytest.raises(Exception):
+            await fut
 
     # After the first failure consumer hard fails
     assert len(probe.mock_calls) == 1
@@ -322,7 +325,7 @@ async def test_subscription_failure(app):
         probe("ok", data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(2, seconds=5))
+        fut = asyncio.create_task(app.consume_for(3, seconds=5))
         await asyncio.sleep(0.5)
 
         await app.publish("foo.bar", Foo(bar=2))
@@ -333,5 +336,8 @@ async def test_subscription_failure(app):
     # We still missing one message, we need to set the offset to `pos-1` when init the consumer
     probe.assert_has_calls(
         [call("error", Foo(bar="1")), call("ok", Foo(bar="1")), call("ok", Foo(bar="2"))],
-        any_order=True
+        any_order=True,
     )
+
+    # 1 failed + 3 ok
+    assert len(probe.mock_calls) == 4
