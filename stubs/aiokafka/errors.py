@@ -6,6 +6,10 @@ class RequestTimedOutError(Exception):
     ...
 
 
+class ConsumerStoppedError(Exception):
+    ...
+
+
 class IllegalStateError(Exception):
     ...
 
