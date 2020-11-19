@@ -12,6 +12,8 @@ from .metrics import MESSAGE_LEAD_TIME
 from .metrics import NOERROR
 from .metrics import PRODUCER_TOPIC_OFFSET
 from .metrics import PUBLISHED_MESSAGES
+from .retry import RetryHandler
+from .retry import RetryPolicy
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
@@ -46,10 +48,18 @@ logger = logging.getLogger("kafkaesk")
 
 
 class Subscription:
-    def __init__(self, stream_id: str, func: Callable, group: str):
+    def __init__(
+        self,
+        stream_id: str,
+        func: Callable,
+        group: str,
+        *,
+        retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
+    ):
         self.stream_id = stream_id
         self.func = func
         self.group = group
+        self.retry_handlers = retry_handlers
 
     def __repr__(self) -> str:
         return f"<Subscription stream: {self.stream_id} >"
@@ -162,6 +172,11 @@ class SubscriptionConsumer:
             self._consumer, self._app, self._subscription.group
         )
         self._consumer.subscribe(pattern=pattern, listener=listener)
+
+        # Initialize subscribers retry policy
+        retry_policy = RetryPolicy(app=self._app, subscription=self._subscription,)
+        await retry_policy.initialize()
+
         await self._consumer.start()
 
         msg_handler = _raw_msg_handler
@@ -236,22 +251,24 @@ class SubscriptionConsumer:
                         partition=record.partition,
                         group_id=self._subscription.group,
                     ).inc()
-                except UnhandledMessage:
-                    # how should we handle this? Right now, fail hard
-                    logger.warning(f"Could not process msg: {record}", exc_info=True)
-                    # We increase the error counter
+                except Exception as err:
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,
                         partition=record.partition,
-                        error="UnhandledMessage",
+                        error=err.__class__.__name__,
                         group_id=self._subscription.group,
                     ).inc()
-
+                    await retry_policy(record=record, exception=err)
                 finally:
                     context.span.finish()
                     context.close()
                     await self.emit("message", record=record)
         finally:
+            # Shutdown the retry policy
+            try:
+                await retry_policy.finalize()
+            except Exception:
+                logger.info("Cound not properly stop retry policy", exc_info=True)
             try:
                 await self._consumer.commit()
             except Exception:
@@ -290,9 +307,17 @@ class Router:
 
         self._event_handlers[name].append(handler)
 
-    def subscribe(self, stream_id: str, group: str,) -> Callable:
+    def subscribe(
+        self,
+        stream_id: str,
+        group: str,
+        *,
+        retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
+    ) -> Callable:
         def inner(func: Callable) -> Callable:
-            subscription = Subscription(stream_id, func, group or func.__name__)
+            subscription = Subscription(
+                stream_id, func, group or func.__name__, retry_handlers=retry_handlers
+            )
             self._subscriptions.append(subscription)
             return func
 
