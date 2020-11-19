@@ -333,7 +333,6 @@ async def test_subscription_failure(app):
 
         await fut
 
-    # We still missing one message, we need to set the offset to `pos-1` when init the consumer
     probe.assert_has_calls(
         [call("error", Foo(bar="1")), call("ok", Foo(bar="1")), call("ok", Foo(bar="2"))],
         any_order=True,

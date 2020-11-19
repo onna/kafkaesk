@@ -261,7 +261,6 @@ class SubscriptionConsumer:
                     ).inc()
                     await retry_policy(record=record, exception=err)
                 finally:
-                    context.span.finish()
                     context.close()
                     await self.emit("message", record=record)
         except Exception as exc:
