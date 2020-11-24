@@ -4,8 +4,10 @@ from kafka.structs import TopicPartition
 from typing import Any
 from typing import AsyncIterator
 from typing import Awaitable
+from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Set
 from typing import Tuple
 
 
@@ -76,7 +78,7 @@ class AIOKafkaConsumer:
     async def stop(self) -> None:
         ...
 
-    async def commit(self) -> None:
+    async def commit(self, to_commit: Optional[Dict[TopicPartition, int]] = None) -> None:
         ...
 
     def __aiter__(self) -> AsyncIterator[ConsumerRecord]:
@@ -92,6 +94,9 @@ class AIOKafkaConsumer:
         ...
 
     async def seek_to_beginning(self, tp: TopicPartition) -> None:
+        ...
+
+    def assignment(self) -> Set[TopicPartition]:
         ...
 
 

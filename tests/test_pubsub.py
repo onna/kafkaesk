@@ -1,8 +1,8 @@
 from aiokafka import ConsumerRecord
 from kafkaesk.kafka import KafkaTopicManager
 from kafkaesk.retry import Forward
-from unittest.mock import Mock
 from unittest.mock import call
+from unittest.mock import Mock
 from unittest.mock import patch
 
 import asyncio
@@ -292,27 +292,36 @@ async def test_subscription_calls_retry_policy(app):
 
 async def test_subscription_failure(app):
     probe = Mock()
+    stream_id = "foo-bar-subfailure"
+    group_id = "test_sub_group_failure"
+    topic_id = app.topic_mng.get_topic_id(stream_id)
 
-    @app.schema("Foo", version=1)
+    @app.schema(streams=[stream_id])
     class Foo(pydantic.BaseModel):
         bar: str
 
-    @app.subscribe("foo.bar", group="test_group")
+    @app.subscribe(stream_id, group=group_id)
     async def noop_ng(data: Foo):
         probe("error", data)
         raise Exception("Unhandled Exception")
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(2, seconds=5))
-        await asyncio.sleep(0.5)
-
-        await app.publish("foo.bar", Foo(bar=1))
-        await app.publish("foo.bar", Foo(bar=1))
+        await app.publish(stream_id, Foo(bar=1))
+        await app.publish(stream_id, Foo(bar=1))
         await app.flush()
 
         # it fails
         with pytest.raises(Exception):
-            await fut
+            await app.consume_for(2, seconds=5)
+
+        # verify we didn't commit
+        # self.topic_mng.get_topic_id(stream_id)
+        assert not any(
+            [
+                tp.topic == topic_id
+                for tp in (await app.topic_mng.list_consumer_group_offsets(group_id)).keys()
+            ]
+        )
 
     # After the first failure consumer hard fails
     assert len(probe.mock_calls) == 1
@@ -320,18 +329,29 @@ async def test_subscription_failure(app):
     # remove wrong consumer
     app._subscriptions = []
 
-    @app.subscribe("foo.bar", group="test_group")
+    @app.subscribe(stream_id, group=group_id)
     async def noop_ok(data: Foo):
         probe("ok", data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(3, seconds=5))
-        await asyncio.sleep(0.5)
-
-        await app.publish("foo.bar", Foo(bar=2))
+        await app.publish(stream_id, Foo(bar=2))
         await app.flush()
 
-        await fut
+        await app.consume_for(3, seconds=3)
+
+        # make sure we that now committed all messages
+        assert (
+            sum(
+                [
+                    om.offset
+                    for tp, om in (
+                        await app.topic_mng.list_consumer_group_offsets(group_id)
+                    ).items()
+                    if tp.topic == topic_id
+                ]
+            )
+            == 3
+        )
 
     probe.assert_has_calls(
         [call("error", Foo(bar="1")), call("ok", Foo(bar="1")), call("ok", Foo(bar="2"))],

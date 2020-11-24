@@ -65,8 +65,11 @@ async def test_consumer_health_check():
 @pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check_raises_exception():
     app = kafkaesk.Application()
-    subscription_consumer = AsyncMock()
+    subscription_consumer = kafkaesk.SubscriptionConsumer(
+        app, kafkaesk.Subscription("foo", lambda: 1, "group")
+    )
     app._subscription_consumers.append(subscription_consumer)
-    subscription_consumer.consumer._client.ready.return_value = False
+    subscription_consumer._consumer = AsyncMock()
+    subscription_consumer._consumer._client.ready.return_value = False
     with pytest.raises(kafkaesk.exceptions.ConsumerUnhealthyException):
         await app.health_check()
