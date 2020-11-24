@@ -3,7 +3,6 @@ from .exceptions import ConsumerUnhealthyException
 from .exceptions import SchemaConflictException
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
-from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
 from .metrics import CONSUMED_MESSAGE_TIME
 from .metrics import CONSUMED_MESSAGES
@@ -170,7 +169,7 @@ class SubscriptionConsumer:
         await self.initialize()
         try:
             while True:
-                await self.__run()
+                await self._run()
         except aiokafka.errors.UnrecognizedBrokerVersion:
             logger.error("Could not determine kafka version. Exiting")
         except aiokafka.errors.KafkaConnectionError:
@@ -208,9 +207,9 @@ class SubscriptionConsumer:
             async with self._commit_lock:
                 # it's possible to commit on exit as well
                 # so let's make sure to use lock here
-                await self.__commit()
+                await self._commit()
 
-    async def __commit(self) -> None:
+    async def _commit(self) -> None:
         to_commit = self._to_commit
         try:
             self._to_commit = {}
@@ -236,7 +235,7 @@ class SubscriptionConsumer:
     def record_commit(self, record: aiokafka.structs.ConsumerRecord) -> None:
         self._to_commit[TopicPartition(record.topic, record.partition)] = record.offset + 1
 
-    async def __run(self) -> None:
+    async def _run(self) -> None:
         self._consumer = aiokafka.AIOKafkaConsumer(
             bootstrap_servers=cast(List[str], self._app._kafka_servers),
             loop=asyncio.get_event_loop(),
@@ -529,8 +528,6 @@ class Application(Router):
 
         schema_key = getattr(data, "__key__", None)
         if schema_key not in self._schemas:
-            raise UnregisteredSchemaException(model=data)
-        else:
             # do not require key
             schema_key = f"{data.__class__.__name__}:1"
         data_ = data.dict()
@@ -539,13 +536,14 @@ class Application(Router):
         async with self.get_lock(stream_id):
             if not await self.topic_mng.topic_exists(topic_id):
                 reg = self.get_schema_reg(data)
-                if reg is not None:
-                    # otherwise, allow default kafka auto create
-                    await self.topic_mng.create_topic(
-                        topic_id,
-                        replication_factor=self._replication_factor,
-                        retention_ms=reg.retention * 1000 if reg.retention is not None else None,
-                    )
+                retention_ms = None
+                if reg is not None and reg.retention is not None:
+                    retention_ms = reg.retention * 1000
+                await self.topic_mng.create_topic(
+                    topic_id,
+                    replication_factor=self._replication_factor,
+                    retention_ms=retention_ms,
+                )
 
         return await self.raw_publish(
             stream_id, orjson.dumps({"schema": schema_key, "data": data_}), key

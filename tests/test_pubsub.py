@@ -5,6 +5,7 @@ from unittest.mock import call
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import aiokafka.structs
 import asyncio
 import pydantic
 import pytest
@@ -360,3 +361,54 @@ async def test_subscription_failure(app):
 
     # 1 failed + 3 ok
     assert len(probe.mock_calls) == 4
+
+
+async def test_publish_unregistered_schema(app):
+    probe = Mock()
+    stream_id = "foo-bar-unregistered"
+    group_id = "test-sub-unregistered"
+
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe(stream_id, group=group_id)
+    async def noop(data: Foo):
+        probe(data)
+
+    async with app:
+        await app.publish(stream_id, Foo(bar=1))
+        await app.publish(stream_id, Foo(bar=2))
+        await app.flush()
+
+        await app.consume_for(2, seconds=5)
+
+    probe.assert_has_calls(
+        [call(Foo(bar="1")), call(Foo(bar="2"))], any_order=True,
+    )
+
+    # 1 failed + 3 ok
+    assert len(probe.mock_calls) == 2
+
+
+async def test_raw_publish_data(app):
+    probe = Mock()
+    stream_id = "foo-bar-raw"
+    group_id = "test-sub-raw"
+
+    @app.subscribe(stream_id, group=group_id)
+    async def noop(record: aiokafka.structs.ConsumerRecord):
+        probe(record.value)
+
+    async with app:
+        await app.raw_publish(stream_id, b"1")
+        await app.raw_publish(stream_id, b"2")
+        await app.flush()
+
+        await app.consume_for(2, seconds=5)
+
+    probe.assert_has_calls(
+        [call(b"1"), call(b"2")], any_order=True,
+    )
+
+    # 1 failed + 3 ok
+    assert len(probe.mock_calls) == 2
