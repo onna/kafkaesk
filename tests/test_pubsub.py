@@ -242,7 +242,6 @@ async def test_cache_topic_exists_topic_mng(kafka):
     assert await mng.topic_exists(topic_id)
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_subscription_creates_retry_policy(app):
     @app.schema("Foo", version=1)
     class Foo(pydantic.BaseModel):
@@ -268,7 +267,6 @@ async def test_subscription_creates_retry_policy(app):
         policy_mock.return_value.finalize.assert_awaited_once()
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_subscription_calls_retry_policy(app):
     handler_mock = AsyncMock()
 

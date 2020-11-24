@@ -55,7 +55,6 @@ def test_mount_router(app):
     assert app.event_handlers == router.event_handlers
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check():
     app = kafkaesk.Application()
     subscription_consumer = AsyncMock()
@@ -64,7 +63,6 @@ async def test_consumer_health_check():
     await app.health_check()
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check_raises_exception():
     app = kafkaesk.Application()
     subscription_consumer = kafkaesk.SubscriptionConsumer(
@@ -77,7 +75,6 @@ async def test_consumer_health_check_raises_exception():
         await app.health_check()
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check_raises_exception_if_commit_task_done():
     app = kafkaesk.Application()
     subscription_consumer = kafkaesk.SubscriptionConsumer(
