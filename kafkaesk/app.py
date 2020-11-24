@@ -450,7 +450,7 @@ class Application(Router):
         replication_factor: Optional[int] = None,
         kafka_api_version: str = "auto",
         auto_commit: bool = True,
-        auto_commit_interval_ms: int = 3000,
+        auto_commit_interval_ms: int = 2000,
     ):
         super().__init__()
         self._kafka_servers = kafka_servers
