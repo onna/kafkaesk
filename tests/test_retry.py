@@ -59,7 +59,6 @@ async def test_retry_message_is_serializable(record: ConsumerRecord) -> None:
     deserialized_message.original_record.to_consumer_record()
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_retry_policy(app: kafkaesk.Application, record: ConsumerRecord) -> None:
     policy = retry.RetryPolicy(app, kafkaesk.app.Subscription("foobar", NOOPCallback, "group"))
     exception = NOOPException()
@@ -169,7 +168,6 @@ async def test_retry_policy_default_handler(app: kafkaesk.Application) -> None:
     assert isinstance(handler, retry.Raise)
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_retry_handler(record: ConsumerRecord) -> None:
     class NOOPHandler(retry.RetryHandler):
         ...
@@ -227,7 +225,6 @@ async def test_retry_handler(record: ConsumerRecord) -> None:
         policy.app.publish.assert_awaited_once()
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_raise_handler(record: ConsumerRecord) -> None:
     policy = AsyncMock()
     exception = NOOPException()
@@ -238,7 +235,6 @@ async def test_raise_handler(record: ConsumerRecord) -> None:
         await raise_handler(policy, "Exception", retry_history, record, exception)
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_drop_handler(record: ConsumerRecord) -> None:
     policy = AsyncMock()
     exception = NOOPException()
@@ -248,7 +244,6 @@ async def test_drop_handler(record: ConsumerRecord) -> None:
     await noretry(policy, "NOOPException", retry_history, record, exception)
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")  # type: ignore
 async def test_forward_handler(record: ConsumerRecord) -> None:
     policy = AsyncMock()
     exception = NOOPException()

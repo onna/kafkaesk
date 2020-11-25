@@ -1,8 +1,8 @@
+from .exceptions import AutoCommitError
 from .exceptions import ConsumerUnhealthyException
 from .exceptions import SchemaConflictException
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
-from .exceptions import UnregisteredSchemaException
 from .kafka import KafkaTopicManager
 from .metrics import CONSUMED_MESSAGE_TIME
 from .metrics import CONSUMED_MESSAGES
@@ -15,6 +15,7 @@ from .metrics import PUBLISHED_MESSAGES
 from .retry import RetryHandler
 from .retry import RetryPolicy
 from .utils import resolve_dotted_name
+from aiokafka.structs import TopicPartition
 from asyncio.futures import Future
 from functools import partial
 from opentracing.scope_managers.contextvars import ContextVarsScopeManager
@@ -37,6 +38,7 @@ import argparse
 import asyncio
 import fnmatch
 import inspect
+import kafka.errors
 import logging
 import opentracing
 import orjson
@@ -124,6 +126,8 @@ def _published_callback(topic: str, fut: Future) -> None:
 
 class SubscriptionConsumer:
     _consumer: Optional[aiokafka.AIOKafkaConsumer] = None
+    _to_commit: Dict[TopicPartition, int]
+    _auto_commit_task: Optional[asyncio.Task] = None
 
     def __init__(
         self,
@@ -134,10 +138,23 @@ class SubscriptionConsumer:
         self._app = app
         self._subscription = subscription
         self._event_handlers = event_handlers or {}
+        self._to_commit = {}
+        self._commit_lock = asyncio.Lock()
 
     @property
-    def consumer(self) -> Optional[aiokafka.AIOKafkaConsumer]:
+    def consumer(self) -> aiokafka.AIOKafkaConsumer:
+        if self._consumer is None:
+            raise RuntimeError("Consumer not initialized")
         return self._consumer
+
+    async def healthy(self) -> None:
+        if self._consumer is None:
+            return
+        if self._auto_commit_task is not None and self._auto_commit_task.done():
+            raise AutoCommitError(self, "No auto commit task running")
+        if not await self._consumer._client.ready(self._consumer._coordinator.coordinator_id):
+            raise ConsumerUnhealthyException(self, "Consumer is not ready")
+        return
 
     async def emit(self, name: str, *args: Any, **kwargs: Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -149,22 +166,82 @@ class SubscriptionConsumer:
                 logger.warning(f"Error emitting event: {name}: {func}", exc_info=True)
 
     async def __call__(self) -> None:
+        await self.initialize()
         try:
             while True:
-                await self.__run()
+                await self._run()
         except aiokafka.errors.UnrecognizedBrokerVersion:
             logger.error("Could not determine kafka version. Exiting")
         except aiokafka.errors.KafkaConnectionError:
             logger.warning("Connection error", exc_info=True)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
             logger.debug("Consumer stopped, exiting")
+        await self.finalize()
 
-    async def __run(self) -> None:
+    async def initialize(self) -> None:
+        if self._app.auto_commit:
+            self._auto_commit_task = asyncio.create_task(self._auto_commit())
+
+    async def finalize(self) -> None:
+        if (
+            self._app.auto_commit
+            and self._auto_commit_task is not None
+            and not self._auto_commit_task.done()
+        ):
+            self._auto_commit_task.cancel()
+
+    async def _auto_commit(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(self._app.auto_commit_interval_ms / 1000)
+                await self.commit()
+            except (RuntimeError, asyncio.CancelledError):
+                logger.debug("Exiting auto commit task")
+                return
+
+    async def commit(self) -> None:
+        """
+        Commit current state
+        """
+        if len(self._to_commit) > 0:
+            async with self._commit_lock:
+                # it's possible to commit on exit as well
+                # so let's make sure to use lock here
+                await self._commit()
+
+    async def _commit(self) -> None:
+        to_commit = self._to_commit
+        try:
+            self._to_commit = {}
+            assignment = self.consumer.assignment()
+            for tp in list(to_commit.keys()):
+                if tp not in assignment:
+                    # clean if we got a new assignment
+                    del to_commit[tp]
+            if len(to_commit) > 0:
+                await self.consumer.commit(to_commit)
+        except kafka.errors.CommitFailedError:
+            # try to commit again but we need to combine
+            # what could now be in the commit from when we started
+            for tp in to_commit.keys():
+                if tp in self._to_commit:
+                    self._to_commit[tp] = max(to_commit[tp], self._to_commit[tp])
+                else:
+                    self._to_commit[tp] = to_commit[tp]
+            logging.debug("Failed to commit offsets", exc_info=True)
+        except kafka.errors.IllegalStateError:
+            logging.debug("Failed to commit offsets, rebalanced likely", exc_info=True)
+
+    def record_commit(self, record: aiokafka.structs.ConsumerRecord) -> None:
+        self._to_commit[TopicPartition(record.topic, record.partition)] = record.offset + 1
+
+    async def _run(self) -> None:
         self._consumer = aiokafka.AIOKafkaConsumer(
             bootstrap_servers=cast(List[str], self._app._kafka_servers),
             loop=asyncio.get_event_loop(),
             group_id=self._subscription.group,
             api_version=self._app._kafka_api_version,
+            enable_auto_commit=False,
             **self._app._kafka_settings or {},
         )
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
@@ -234,6 +311,8 @@ class SubscriptionConsumer:
                             kwargs["record"] = record
                         elif key == "app":
                             kwargs["app"] = self._app
+                        elif key == "subscriber":
+                            kwargs["subscriber"] = self
                         elif issubclass(param.annotation, opentracing.Span):
                             kwargs[key] = context.span
 
@@ -251,6 +330,7 @@ class SubscriptionConsumer:
                         partition=record.partition,
                         group_id=self._subscription.group,
                     ).inc()
+                    self.record_commit(record)
                 except Exception as err:
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,
@@ -259,20 +339,24 @@ class SubscriptionConsumer:
                         group_id=self._subscription.group,
                     ).inc()
                     await retry_policy(record=record, exception=err)
+                    # also commit after successful message retry handling
+                    self.record_commit(record)
+                except aiokafka.errors.ConsumerStoppedError:
+                    # Consumer is closed
+                    pass
                 finally:
-                    context.span.finish()
                     context.close()
                     await self.emit("message", record=record)
         finally:
-            # Shutdown the retry policy
             try:
+                await self.commit()
+            except Exception:
+                logger.info("Could not commit on shutdown", exc_info=True)
+            try:
+                # kill retry policy now
                 await retry_policy.finalize()
             except Exception:
                 logger.info("Cound not properly stop retry policy", exc_info=True)
-            try:
-                await self._consumer.commit()
-            except Exception:
-                logger.info("Could not commit current offsets", exc_info=True)
             try:
                 await self._consumer.stop()
             except Exception:
@@ -325,7 +409,7 @@ class Router:
 
     def schema(
         self,
-        _id: str,
+        _id: Optional[str] = None,
         *,
         version: Optional[int] = None,
         retention: Optional[int] = None,
@@ -334,9 +418,13 @@ class Router:
         version = version or 1
 
         def inner(cls: Type[BaseModel]) -> Type[BaseModel]:
-            key = f"{_id}:{version}"
+            if _id is None:
+                type_id = cls.__name__
+            else:
+                type_id = _id
+            key = f"{type_id}:{version}"
             reg = SchemaRegistration(
-                id=_id, version=version or 1, model=cls, retention=retention, streams=streams
+                id=type_id, version=version or 1, model=cls, retention=retention, streams=streams
             )
             if key in self._schemas:
                 raise SchemaConflictException(self._schemas[key], reg)
@@ -361,6 +449,8 @@ class Application(Router):
         kafka_settings: Optional[Dict[str, Any]] = None,
         replication_factor: Optional[int] = None,
         kafka_api_version: str = "auto",
+        auto_commit: bool = True,
+        auto_commit_interval_ms: int = 2000,
     ):
         super().__init__()
         self._kafka_servers = kafka_servers
@@ -376,6 +466,9 @@ class Application(Router):
         self._subscription_consumers: List[SubscriptionConsumer] = []
         self._subscription_consumers_tasks: List[asyncio.Task] = []
 
+        self.auto_commit = auto_commit
+        self.auto_commit_interval_ms = auto_commit_interval_ms
+
     def mount(self, router: Router) -> None:
         self._subscriptions.extend(router.subscriptions)
         self._schemas.update(router.schemas)
@@ -383,13 +476,7 @@ class Application(Router):
 
     async def health_check(self) -> None:
         for subscription_consumer in self._subscription_consumers:
-            if (
-                subscription_consumer.consumer is not None
-                and not await subscription_consumer.consumer._client.ready(
-                    subscription_consumer.consumer._coordinator.coordinator_id
-                )
-            ):
-                raise ConsumerUnhealthyException(subscription_consumer, "Consumer is not ready")
+            await subscription_consumer.healthy()
 
     async def _call_event_handlers(self, name: str) -> None:
         handlers = self._event_handlers.get(name)
@@ -441,23 +528,32 @@ class Application(Router):
 
         schema_key = getattr(data, "__key__", None)
         if schema_key not in self._schemas:
-            raise UnregisteredSchemaException(model=data)
+            # do not require key
+            schema_key = f"{data.__class__.__name__}:1"
         data_ = data.dict()
 
         topic_id = self.topic_mng.get_topic_id(stream_id)
         async with self.get_lock(stream_id):
             if not await self.topic_mng.topic_exists(topic_id):
                 reg = self.get_schema_reg(data)
+                retention_ms = None
+                if reg is not None and reg.retention is not None:
+                    retention_ms = reg.retention * 1000
                 await self.topic_mng.create_topic(
                     topic_id,
                     replication_factor=self._replication_factor,
-                    retention_ms=reg.retention * 1000 if reg.retention is not None else None,
+                    retention_ms=retention_ms,
                 )
 
+        return await self.raw_publish(
+            stream_id, orjson.dumps({"schema": schema_key, "data": data_}), key
+        )
+
+    async def raw_publish(
+        self, stream_id: str, data: bytes, key: Optional[bytes] = None
+    ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         logger.debug(f"Sending kafka msg: {stream_id}")
-
         producer = await self._get_producer()
-
         tracer = opentracing.tracer
         headers: Optional[List[Tuple[str, bytes]]] = None
         if isinstance(tracer.scope_manager, ContextVarsScopeManager):
@@ -471,13 +567,8 @@ class Application(Router):
                 )
                 headers = [(k, v.encode()) for k, v in carrier.items()]
 
-        fut = await producer.send(
-            topic_id,
-            value=orjson.dumps({"schema": schema_key, "data": data_}),
-            key=key,
-            headers=headers,
-        )
-
+        topic_id = self.topic_mng.get_topic_id(stream_id)
+        fut = await producer.send(topic_id, value=data, key=key, headers=headers,)
         fut.add_done_callback(partial(_published_callback, topic_id))  # type: ignore
         return fut
 
@@ -485,9 +576,12 @@ class Application(Router):
         if self._producer is not None:
             await self._producer.flush()
 
-    def get_schema_reg(self, model_or_def: BaseModel) -> SchemaRegistration:
-        key = model_or_def.__key__  # type: ignore
-        return self._schemas[key]
+    def get_schema_reg(self, model_or_def: BaseModel) -> Optional[SchemaRegistration]:
+        try:
+            key = model_or_def.__key__  # type: ignore
+            return self._schemas[key]
+        except (AttributeError, KeyError):
+            return None
 
     async def _get_producer(self) -> aiokafka.AIOKafkaProducer:
         if self._producer is None:
@@ -641,18 +735,6 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
                 # decision right now is to go back to beginning
                 # and it's unclear if this is always right decision
                 await self.consumer.seek_to_beginning(tp)
-
-            # XXX go back one message
-            # unclear if this is what we want to do...
-            # try:
-            #     position = await self.consumer.position(tp)
-            #     offset = position - 1
-            # except aiokafka.errors.IllegalStateError:
-            #     offset = -1
-            # if offset > 0:
-            #     self.consumer.seek(tp, offset)
-            # else:
-            #     await self.consumer.seek_to_beginning(tp)
 
 
 cli_parser = argparse.ArgumentParser(description="Run kafkaesk worker.")

@@ -4,6 +4,8 @@ except ImportError:
     AsyncMock = None
 
 
+from unittest.mock import MagicMock
+
 import kafkaesk
 import kafkaesk.exceptions
 import pydantic
@@ -53,7 +55,6 @@ def test_mount_router(app):
     assert app.event_handlers == router.event_handlers
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check():
     app = kafkaesk.Application()
     subscription_consumer = AsyncMock()
@@ -62,11 +63,26 @@ async def test_consumer_health_check():
     await app.health_check()
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_consumer_health_check_raises_exception():
     app = kafkaesk.Application()
-    subscription_consumer = AsyncMock()
+    subscription_consumer = kafkaesk.SubscriptionConsumer(
+        app, kafkaesk.Subscription("foo", lambda: 1, "group")
+    )
     app._subscription_consumers.append(subscription_consumer)
-    subscription_consumer.consumer._client.ready.return_value = False
+    subscription_consumer._consumer = AsyncMock()
+    subscription_consumer._consumer._client.ready.return_value = False
     with pytest.raises(kafkaesk.exceptions.ConsumerUnhealthyException):
+        await app.health_check()
+
+
+async def test_consumer_health_check_raises_exception_if_commit_task_done():
+    app = kafkaesk.Application()
+    subscription_consumer = kafkaesk.SubscriptionConsumer(
+        app, kafkaesk.Subscription("foo", lambda: 1, "group")
+    )
+    subscription_consumer._consumer = MagicMock()
+    subscription_consumer._auto_commit_task = MagicMock()
+    subscription_consumer._auto_commit_task.done.return_value = True
+    app._subscription_consumers.append(subscription_consumer)
+    with pytest.raises(kafkaesk.exceptions.AutoCommitError):
         await app.health_check()

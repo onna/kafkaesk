@@ -1,9 +1,11 @@
 from aiokafka import ConsumerRecord
 from kafkaesk.kafka import KafkaTopicManager
 from kafkaesk.retry import Forward
+from unittest.mock import call
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import aiokafka.structs
 import asyncio
 import pydantic
 import pytest
@@ -240,7 +242,6 @@ async def test_cache_topic_exists_topic_mng(kafka):
     assert await mng.topic_exists(topic_id)
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_subscription_creates_retry_policy(app):
     @app.schema("Foo", version=1)
     class Foo(pydantic.BaseModel):
@@ -266,7 +267,6 @@ async def test_subscription_creates_retry_policy(app):
         policy_mock.return_value.finalize.assert_awaited_once()
 
 
-@pytest.mark.skipif(AsyncMock is None, reason="Only py 3.8")
 async def test_subscription_calls_retry_policy(app):
     handler_mock = AsyncMock()
 
@@ -287,3 +287,126 @@ async def test_subscription_calls_retry_policy(app):
         await fut
 
     handler_mock.assert_awaited_once()
+
+
+async def test_subscription_failure(app):
+    probe = Mock()
+    stream_id = "foo-bar-subfailure"
+    group_id = "test_sub_group_failure"
+    topic_id = app.topic_mng.get_topic_id(stream_id)
+
+    @app.schema(streams=[stream_id])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe(stream_id, group=group_id)
+    async def noop_ng(data: Foo):
+        probe("error", data)
+        raise Exception("Unhandled Exception")
+
+    async with app:
+        await app.publish(stream_id, Foo(bar=1))
+        await app.publish(stream_id, Foo(bar=1))
+        await app.flush()
+
+        # it fails
+        with pytest.raises(Exception):
+            await app.consume_for(2, seconds=5)
+
+        # verify we didn't commit
+        # self.topic_mng.get_topic_id(stream_id)
+        assert not any(
+            [
+                tp.topic == topic_id
+                for tp in (await app.topic_mng.list_consumer_group_offsets(group_id)).keys()
+            ]
+        )
+
+    # After the first failure consumer hard fails
+    assert len(probe.mock_calls) == 1
+
+    # remove wrong consumer
+    app._subscriptions = []
+
+    @app.subscribe(stream_id, group=group_id)
+    async def noop_ok(data: Foo):
+        probe("ok", data)
+
+    async with app:
+        await app.publish(stream_id, Foo(bar=2))
+        await app.flush()
+
+        await app.consume_for(3, seconds=3)
+
+        # make sure we that now committed all messages
+        assert (
+            sum(
+                [
+                    om.offset
+                    for tp, om in (
+                        await app.topic_mng.list_consumer_group_offsets(group_id)
+                    ).items()
+                    if tp.topic == topic_id
+                ]
+            )
+            == 3
+        )
+
+    probe.assert_has_calls(
+        [call("error", Foo(bar="1")), call("ok", Foo(bar="1")), call("ok", Foo(bar="2"))],
+        any_order=True,
+    )
+
+    # 1 failed + 3 ok
+    assert len(probe.mock_calls) == 4
+
+
+async def test_publish_unregistered_schema(app):
+    probe = Mock()
+    stream_id = "foo-bar-unregistered"
+    group_id = "test-sub-unregistered"
+
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe(stream_id, group=group_id)
+    async def noop(data: Foo):
+        probe(data)
+
+    async with app:
+        await app.publish(stream_id, Foo(bar=1))
+        await app.publish(stream_id, Foo(bar=2))
+        await app.flush()
+
+        await app.consume_for(2, seconds=5)
+
+    probe.assert_has_calls(
+        [call(Foo(bar="1")), call(Foo(bar="2"))], any_order=True,
+    )
+
+    # 1 failed + 3 ok
+    assert len(probe.mock_calls) == 2
+
+
+async def test_raw_publish_data(app):
+    probe = Mock()
+    stream_id = "foo-bar-raw"
+    group_id = "test-sub-raw"
+
+    @app.subscribe(stream_id, group=group_id)
+    async def noop(record: aiokafka.structs.ConsumerRecord):
+        probe(record.value)
+
+    async with app:
+        await app.raw_publish(stream_id, b"1")
+        await app.raw_publish(stream_id, b"2")
+        await app.flush()
+
+        await app.consume_for(2, seconds=5)
+
+    probe.assert_has_calls(
+        [call(b"1"), call(b"2")], any_order=True,
+    )
+
+    # 1 failed + 3 ok
+    assert len(probe.mock_calls) == 2

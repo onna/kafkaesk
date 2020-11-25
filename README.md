@@ -112,6 +112,8 @@ Optional consumer injected parameters:
 
 - schema: str
 - record: aiokafka.structs.ConsumerRecord
+- app: kafkaesk.app.Application
+- subscriber: kafkaesk.app.SubscriptionConsumer
 
 Depending on the type annotation for the first parameter, you will get different data injected:
 
@@ -119,6 +121,20 @@ Depending on the type annotation for the first parameter, you will get different
 - `async def get_messages(data: bytes)`: give raw byte data
 - `async def get_messages(record: aiokafka.structs.ConsumerRecord)`: give kafka record object
 - `async def get_messages(data)`: raw json data in message
+
+
+## manual commit
+
+To accomplish a manual commit strategy yourself:
+
+```
+app = kafkaesk.Application(auto_commit=False)
+
+@app.subscribe('content.*')
+async def get_messages(data: ContentMessage, subscriber):
+    print(f"{data.foo}")
+    await subscriber.commit()
+```
 
 
 ## kafkaesk contract
@@ -183,6 +199,9 @@ Options:
 - topic_prefix: Optional[str]: topic name prefix to subscribe to
 - kafka_settings: Optional[Dict[str, Any]]: additional aiokafka settings to pass in
 - replication_factor: Optional[int]: what replication factor topics should be created with. Defaults to min(number of servers, 3).
+- kafka_api_version: str: default `auto`
+- auto_commit: bool: default `True`
+- auto_commit_interval_ms: int: default `5000`
 
 ## Dev
 
@@ -212,13 +231,6 @@ This extensions ships with two handlers capable of handling `kafkaesk.ext.loggin
 The stream handler is a very small wrapper around `logging.StreamHandler`, the signature is the same, the only difference is that the handler will attempt to convert any pydantic models it receives to a human readable log message.
 
 The kafkaesk handler has a few more bits going on in the background.  The handler has two required inputs, a `kafkaesk.app.Application` instance and a stream name.  Once initialized any logs emitted by the handler will be saved into an internal queue.  There is a worker task that handles pulling logs from the queue and writing those logs to the specified topic.
-
-# TODO
-
-(or a todo here)
-
-- [ ] be able to handle manual commit use-case
-- [ ] be able to reject commit/abort message handling
 
 # Naming things
 
