@@ -35,7 +35,7 @@ def record() -> ConsumerRecord:
         checksum=None,
         serialized_key_size=-1,
         serialized_value_size=37,
-        headers=(),
+        headers=[("test", b"foo")],
     )
 
 
