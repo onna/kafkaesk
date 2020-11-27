@@ -40,7 +40,7 @@ class Record(BaseModel):
 
     @classmethod
     def from_consumer_record(cls, record: ConsumerRecord) -> "Record":
-        headers = [(k,v.decode()) for k, v in record.headers or []]
+        headers = [(k, v.decode()) for k, v in record.headers or []]
         return cls(
             topic=record.topic,
             partition=record.partition,
@@ -59,7 +59,7 @@ class Record(BaseModel):
         # We need to convert the value back into bytes before giving this back to the consumer
         data = self.dict()
         data["value"] = data["value"].encode("utf-8")
-        data["headers"] = [(k,v.encode()) for k, v in data["headers"]]
+        data["headers"] = [(k, v.encode()) for k, v in data["headers"]]
         return ConsumerRecord(**data)  # type: ignore
 
 
