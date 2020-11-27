@@ -40,7 +40,7 @@ class Record(BaseModel):
 
     @classmethod
     def from_consumer_record(cls, record: ConsumerRecord) -> "Record":
-        headers = [(k,v.decode()) for k, v in record.headers]
+        headers = [(k,v.decode()) for k, v in record.headers or []]
         return cls(
             topic=record.topic,
             partition=record.partition,
