@@ -31,3 +31,11 @@ async def test_create_topic_uses_replication_factor():
         client = await mng.get_admin_client()
         assert client.create_topics.called
         assert client.create_topics.call_args[0][0][0].replication_factor == 1
+
+
+def test_constructor_translates_api_version():
+    mng = KafkaTopicManager(["foobar"], kafka_api_version="auto")
+    assert mng.kafka_api_version is None
+
+    mng = KafkaTopicManager(["foobar"], kafka_api_version="2.4.0")
+    assert mng.kafka_api_version == (2, 4, 0)
