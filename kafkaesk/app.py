@@ -169,14 +169,14 @@ class SubscriptionConsumer:
         await self.initialize()
         try:
             while True:
-                await self._run()
-        except aiokafka.errors.UnrecognizedBrokerVersion:
-            logger.error("Could not determine kafka version. Exiting")
-        except aiokafka.errors.KafkaConnectionError:
-            logger.warning("Connection error", exc_info=True)
+                try:
+                    await self._run()
+                except aiokafka.errors.KafkaConnectionError:
+                    logger.warning("Connection error", exc_info=True)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
             logger.debug("Consumer stopped, exiting")
-        await self.finalize()
+        finally:
+            await self.finalize()
 
     async def initialize(self) -> None:
         if self._app.auto_commit:
@@ -492,6 +492,7 @@ class Application(Router):
                 cast(List[str], self._kafka_servers),
                 self._topic_prefix,
                 replication_factor=self._replication_factor,
+                kafka_api_version=self._kafka_api_version,
             )
         return self._topic_mng
 

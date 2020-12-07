@@ -4,6 +4,7 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 
 import kafka
 import kafka.admin
@@ -15,18 +16,28 @@ import kafka.structs
 class KafkaTopicManager:
     _admin_client: Optional[kafka.admin.client.KafkaAdminClient]
     _client: Optional[kafka.KafkaClient]
+    _kafka_api_version: Optional[Tuple[str, ...]]
 
     def __init__(
         self,
         bootstrap_servers: List[str],
         prefix: str = "",
         replication_factor: Optional[int] = None,
+        kafka_api_version: str = "auto",
     ):
         self.prefix = prefix
         self._bootstrap_servers = bootstrap_servers
         self._admin_client = self._client = None
         self._topic_cache: List[str] = []
         self._replication_factor: int = replication_factor or min(3, len(self._bootstrap_servers))
+        if kafka_api_version == "auto":
+            self._kafka_api_version = None
+        else:
+            self._kafka_api_version = tuple([int(v) for v in kafka_api_version.split(".")])
+
+    @property
+    def kafka_api_version(self):
+        return self._kafka_api_version
 
     async def finalize(self) -> None:
         if self._admin_client is not None:
@@ -42,7 +53,9 @@ class KafkaTopicManager:
     async def get_admin_client(self) -> kafka.admin.client.KafkaAdminClient:
         if self._admin_client is None:
             self._admin_client = await run_async(
-                kafka.admin.client.KafkaAdminClient, bootstrap_servers=self._bootstrap_servers
+                kafka.admin.client.KafkaAdminClient,
+                bootstrap_servers=self._bootstrap_servers,
+                api_version=self._kafka_api_version,
             )
         return self._admin_client
 
@@ -58,6 +71,7 @@ class KafkaTopicManager:
                 kafka.KafkaConsumer,
                 bootstrap_servers=self._bootstrap_servers,
                 enable_auto_commit=False,
+                api_version=self._kafka_api_version,
             )
         if topic in self._topic_cache:
             return True
