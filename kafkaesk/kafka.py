@@ -16,7 +16,7 @@ import kafka.structs
 class KafkaTopicManager:
     _admin_client: Optional[kafka.admin.client.KafkaAdminClient]
     _client: Optional[kafka.KafkaClient]
-    _kafka_api_version: Optional[Tuple[str, ...]]
+    _kafka_api_version: Optional[Tuple[int, ...]]
 
     def __init__(
         self,
@@ -36,7 +36,7 @@ class KafkaTopicManager:
             self._kafka_api_version = tuple([int(v) for v in kafka_api_version.split(".")])
 
     @property
-    def kafka_api_version(self):
+    def kafka_api_version(self) -> Optional[Tuple[int, ...]]:
         return self._kafka_api_version
 
     async def finalize(self) -> None:
