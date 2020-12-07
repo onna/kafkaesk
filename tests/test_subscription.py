@@ -25,22 +25,16 @@ async def test_consumer_property_rasises_exception(subscription):
         subscription.consumer
 
 
-async def test_lifecycle_logs_broken_version(subscription, caplog):
-    subscription._run = AsyncMock(side_effect=aiokafka.errors.UnrecognizedBrokerVersion)
-    await subscription()
-    assert subscription._auto_commit_task is not None
-    await asyncio.sleep(0.01)  # let it cancel
-    assert subscription._auto_commit_task.done()
-
-    assert "Could not determine kafka version." in caplog.records[-1].message
-
-
 async def test_lifecycle_logs_connection_error(subscription, caplog):
-    subscription._run = AsyncMock(side_effect=aiokafka.errors.KafkaConnectionError)
-    await subscription()
+    async def _mock_run():
+        await asyncio.sleep(0.005)
+        raise aiokafka.errors.KafkaConnectionError()
+
+    subscription._run = _mock_run
+    task = asyncio.create_task(subscription())
+    await asyncio.sleep(0.01)
     assert subscription._auto_commit_task is not None
-    await asyncio.sleep(0.01)  # let it cancel
-    assert subscription._auto_commit_task.done()
+    task.cancel()
 
     assert "Connection error" in caplog.records[-1].message
 
