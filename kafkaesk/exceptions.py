@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import TYPE_CHECKING
 
+import aiokafka
+
 if TYPE_CHECKING:
     from .app import SchemaRegistration
     from .app import SubscriptionConsumer
@@ -51,3 +53,8 @@ class ConsumerUnhealthyException(Exception):
 
 class AutoCommitError(ConsumerUnhealthyException):
     ...
+
+
+class ProducerUnhealthyException(Exception):
+    def __init__(self, producer: aiokafka.AIOKafkaProducer):
+        self.producer = producer

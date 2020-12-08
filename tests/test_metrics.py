@@ -1,8 +1,8 @@
 from aiokafka.structs import OffsetAndMetadata
 from aiokafka.structs import TopicPartition
-from asyncmock import AsyncMock
 from kafkaesk.app import Application
 from kafkaesk.app import CustomConsumerRebalanceListener
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -34,7 +34,9 @@ async def test_record_metric_on_rebalance():
 async def test_record_metric_on_publish():
     with patch("kafkaesk.app.PUBLISHED_MESSAGES") as published_metric, patch(
         "kafkaesk.app.PUBLISHED_MESSAGES_TIME"
-    ) as published_metric_time:
+    ) as published_metric_time, patch("kafkaesk.metrics.PUBLISH_MESSAGES") as publish_metric, patch(
+        "kafkaesk.metrics.PUBLISH_MESSAGES_TIME"
+    ) as publish_metric_time:
         app = Application()
 
         async def _task():
@@ -51,9 +53,15 @@ async def test_record_metric_on_publish():
 
         await app.raw_publish("foo", b"data")
         await asyncio.sleep(0.01)
+
         published_metric.labels.assert_called_with(stream_id="foobar", partition=0, error="none")
         published_metric.labels(
             stream_id="foobar", partition=0, error="none"
         ).inc.assert_called_once()
         published_metric_time.labels.assert_called_with(stream_id="foobar")
         published_metric_time.labels(stream_id="foobar").observe.assert_called_once()
+
+        publish_metric.labels.assert_called_with(stream_id="foobar", error="none")
+        publish_metric.labels(stream_id="foobar", error="none").inc.assert_called_once()
+        publish_metric_time.labels.assert_called_with(stream_id="foobar")
+        publish_metric_time.labels(stream_id="foobar").observe.assert_called_once()
