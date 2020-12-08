@@ -156,7 +156,7 @@ class watch:
         self.labels = labels or {}
         self.error_mappings = error_mappings or {}
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         self.start = time.time()
 
     def __exit__(
@@ -164,7 +164,7 @@ class watch:
         exc_type: Optional[Type[Exception]],
         exc_value: Optional[Exception],
         exc_traceback: Optional[traceback.StackSummary],
-    ):
+    ) -> None:
         error = NOERROR
         if self.histogram is not None:
             finished = time.time()

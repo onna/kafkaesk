@@ -485,7 +485,7 @@ class Application(Router):
         for subscription_consumer in self._subscription_consumers:
             await subscription_consumer.healthy()
         if not self.producer_healthy():
-            raise ProducerUnhealthyException(self._producer)
+            raise ProducerUnhealthyException(self._producer)  # type: ignore
 
     async def _call_event_handlers(self, name: str) -> None:
         handlers = self._event_handlers.get(name)
@@ -578,7 +578,7 @@ class Application(Router):
                 headers = [(k, v.encode()) for k, v in carrier.items()]
 
         if not self.producer_healthy():
-            raise ProducerUnhealthyException(self._producer)
+            raise ProducerUnhealthyException(self._producer)  # type: ignore
 
         topic_id = self.topic_mng.get_topic_id(stream_id)
         start_time = time.time()
