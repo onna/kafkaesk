@@ -8,6 +8,12 @@ PUBLISHED_MESSAGES = client.Counter(
     ["stream_id", "partition", "error"],
 )
 
+PUBLISHED_MESSAGES_TIME = client.Histogram(
+    "kafkaesk_published_messages_time",
+    "Time taken for a message to be published (in seconds)",
+    ["stream_id"],
+)
+
 
 CONSUMED_MESSAGES = client.Counter(
     "kafkaesk_consumed_messages",
