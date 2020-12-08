@@ -12,6 +12,7 @@ from .metrics import MESSAGE_LEAD_TIME
 from .metrics import NOERROR
 from .metrics import PRODUCER_TOPIC_OFFSET
 from .metrics import PUBLISHED_MESSAGES
+from .metrics import PUBLISHED_MESSAGES_TIME
 from .retry import RetryHandler
 from .retry import RetryPolicy
 from .utils import resolve_dotted_name
@@ -111,8 +112,9 @@ def _record_msg_handler(
     return record
 
 
-def _published_callback(topic: str, fut: Future) -> None:
+def _published_callback(topic: str, start_time: float, fut: Future) -> None:
     # Record the metrics
+    finish_time = time.time()
     exception = fut.exception()
     if exception:
         error = str(exception.__class__.__name__)
@@ -122,6 +124,7 @@ def _published_callback(topic: str, fut: Future) -> None:
     metadata = fut.result()
     PUBLISHED_MESSAGES.labels(stream_id=topic, partition=metadata.partition, error=error).inc()
     PRODUCER_TOPIC_OFFSET.labels(stream_id=topic, partition=metadata.partition).set(metadata.offset)
+    PUBLISHED_MESSAGES_TIME.labels(stream_id=topic).observe(finish_time - start_time)
 
 
 class SubscriptionConsumer:
@@ -569,8 +572,9 @@ class Application(Router):
                 headers = [(k, v.encode()) for k, v in carrier.items()]
 
         topic_id = self.topic_mng.get_topic_id(stream_id)
+        start_time = time.time()
         fut = await producer.send(topic_id, value=data, key=key, headers=headers,)
-        fut.add_done_callback(partial(_published_callback, topic_id))  # type: ignore
+        fut.add_done_callback(partial(_published_callback, topic_id, start_time))  # type: ignore
         return fut
 
     async def flush(self) -> None:
