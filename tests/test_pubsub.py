@@ -33,7 +33,7 @@ async def test_data_binding(app):
         consumed.append((data, schema, record, app))
 
     async with app:
-        await app.publish("foo.bar", Foo(bar="1"))
+        await app.publish_and_wait("foo.bar", Foo(bar="1"))
         await app.flush()
         await app.consume_for(1, seconds=5)
 
@@ -53,7 +53,7 @@ async def test_consume_message(app):
         consumed.append(data)
 
     async with app:
-        await app.publish("foo.bar", Foo(bar="1"))
+        await app.publish_and_wait("foo.bar", Foo(bar="1"))
         await app.flush()
         await app.consume_for(1, seconds=5)
 

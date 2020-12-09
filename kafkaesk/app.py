@@ -529,6 +529,11 @@ class Application(Router):
         if replication_factor is not None:
             self._replication_factor = replication_factor
 
+    async def publish_and_wait(
+        self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
+    ) -> aiokafka.structs.ConsumerRecord:
+        return await (await self.publish(stream_id, data, key))
+
     async def publish(
         self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:

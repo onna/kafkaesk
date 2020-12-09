@@ -40,19 +40,22 @@ async def test_record_metric_on_publish():
         app = Application()
 
         async def _task():
-            metadata = Mock()
-            metadata.partition = 0
-            metadata.offset = 0
-            return metadata
+            async def _inner():
+                metadata = Mock()
+                metadata.partition = 0
+                metadata.offset = 0
+                return metadata
 
-        producer = AsyncMock()
-        producer.send.return_value = asyncio.create_task(_task())
+            return asyncio.create_task(_inner())
+
+        producer = MagicMock()
+        mock_send = AsyncMock(return_value=_task())
+        producer.send = mock_send
         app._get_producer = AsyncMock(return_value=producer)
         app._topic_mng = MagicMock()
         app._topic_mng.get_topic_id.return_value = "foobar"
 
-        await app.raw_publish("foo", b"data")
-        await asyncio.sleep(0.01)
+        await (await app.raw_publish("foo", b"data"))
 
         published_metric.labels.assert_called_with(stream_id="foobar", partition=0, error="none")
         published_metric.labels(
