@@ -5,4 +5,4 @@ from .app import run_app  # noqa
 from .app import Subscription  # noqa
 from .app import SubscriptionConsumer  # noqa
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"
