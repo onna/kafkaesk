@@ -48,9 +48,8 @@ async def test_record_metric_on_publish():
 
             return asyncio.create_task(_inner())
 
-        producer = MagicMock()
-        mock_send = AsyncMock(return_value=_task())
-        producer.send = mock_send
+        producer = AsyncMock()
+        producer.send.return_value = _task()
         app._get_producer = AsyncMock(return_value=producer)
         app._topic_mng = MagicMock()
         app._topic_mng.get_topic_id.return_value = "foobar"
