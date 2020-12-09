@@ -1,9 +1,4 @@
-try:
-    from unittest.mock import AsyncMock
-except ImportError:
-    AsyncMock = None
-
-
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import kafkaesk

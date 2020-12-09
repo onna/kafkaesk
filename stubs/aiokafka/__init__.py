@@ -12,6 +12,8 @@ from typing import Tuple
 
 
 class AIOKafkaProducer:
+    _sender: Any
+
     def __init__(
         self,
         bootstrap_servers: List[str],

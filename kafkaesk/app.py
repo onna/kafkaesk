@@ -1,5 +1,6 @@
 from .exceptions import AutoCommitError
 from .exceptions import ConsumerUnhealthyException
+from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
@@ -13,6 +14,8 @@ from .metrics import NOERROR
 from .metrics import PRODUCER_TOPIC_OFFSET
 from .metrics import PUBLISHED_MESSAGES
 from .metrics import PUBLISHED_MESSAGES_TIME
+from .metrics import watch_kafka
+from .metrics import watch_publish
 from .retry import RetryHandler
 from .retry import RetryPolicy
 from .utils import resolve_dotted_name
@@ -257,7 +260,8 @@ class SubscriptionConsumer:
         retry_policy = RetryPolicy(app=self._app, subscription=self._subscription,)
         await retry_policy.initialize()
 
-        await self._consumer.start()
+        with watch_kafka("consumer_start"):
+            await self._consumer.start()
 
         msg_handler = _raw_msg_handler
         sig = inspect.signature(self._subscription.func)
@@ -480,6 +484,8 @@ class Application(Router):
     async def health_check(self) -> None:
         for subscription_consumer in self._subscription_consumers:
             await subscription_consumer.healthy()
+        if not self.producer_healthy():
+            raise ProducerUnhealthyException(self._producer)  # type: ignore
 
     async def _call_event_handlers(self, name: str) -> None:
         handlers = self._event_handlers.get(name)
@@ -571,9 +577,14 @@ class Application(Router):
                 )
                 headers = [(k, v.encode()) for k, v in carrier.items()]
 
+        if not self.producer_healthy():
+            raise ProducerUnhealthyException(self._producer)  # type: ignore
+
         topic_id = self.topic_mng.get_topic_id(stream_id)
         start_time = time.time()
-        fut = await producer.send(topic_id, value=data, key=key, headers=headers,)
+        with watch_publish(topic_id):
+            fut = await producer.send(topic_id, value=data, key=key, headers=headers,)
+
         fut.add_done_callback(partial(_published_callback, topic_id, start_time))  # type: ignore
         return fut
 
@@ -588,6 +599,14 @@ class Application(Router):
         except (AttributeError, KeyError):
             return None
 
+    def producer_healthy(self) -> bool:
+        """
+        It's possible for the producer to be unhealthy while we're still sending messages to it.
+        """
+        if self._producer is not None and self._producer._sender.sender_task is not None:
+            return not self._producer._sender.sender_task.done()
+        return True
+
     async def _get_producer(self) -> aiokafka.AIOKafkaProducer:
         if self._producer is None:
             self._producer = aiokafka.AIOKafkaProducer(
@@ -595,7 +614,8 @@ class Application(Router):
                 loop=asyncio.get_event_loop(),
                 api_version=self._kafka_api_version,
             )
-            await self._producer.start()
+            with watch_kafka("producer_start"):
+                await self._producer.start()
         return self._producer
 
     async def initialize(self) -> None:
@@ -620,8 +640,10 @@ class Application(Router):
         await self._call_event_handlers("finalize")
 
         if self._producer is not None:
-            await self._producer.flush()
-            await self._producer.stop()
+            with watch_kafka("producer_flush"):
+                await self._producer.flush()
+            with watch_kafka("producer_stop"):
+                await self._producer.stop()
 
         if self._subscription_consumers_tasks:
             for task in self._subscription_consumers_tasks:

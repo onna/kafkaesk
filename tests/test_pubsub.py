@@ -1,7 +1,9 @@
 from aiokafka import ConsumerRecord
+from kafkaesk.exceptions import ProducerUnhealthyException
 from kafkaesk.kafka import KafkaTopicManager
 from kafkaesk.retry import Forward
 from unittest.mock import call
+from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -410,3 +412,13 @@ async def test_raw_publish_data(app):
 
     # 1 failed + 3 ok
     assert len(probe.mock_calls) == 2
+
+
+async def test_publish_unhealthy(app):
+
+    async with app:
+        app._producer = AsyncMock()
+        app._producer._sender = MagicMock()
+        app._producer._sender.sender_task.done.return_value = True
+        with pytest.raises(ProducerUnhealthyException):
+            await app.raw_publish("foobar", b"foobar")

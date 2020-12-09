@@ -1,3 +1,4 @@
+from .metrics import watch_kafka
 from aiokafka import TopicPartition
 from kafkaesk.utils import run_async
 from typing import Any
@@ -52,11 +53,12 @@ class KafkaTopicManager:
 
     async def get_admin_client(self) -> kafka.admin.client.KafkaAdminClient:
         if self._admin_client is None:
-            self._admin_client = await run_async(
-                kafka.admin.client.KafkaAdminClient,
-                bootstrap_servers=self._bootstrap_servers,
-                api_version=self._kafka_api_version,
-            )
+            with watch_kafka("sync_admin_connect"):
+                self._admin_client = await run_async(
+                    kafka.admin.client.KafkaAdminClient,
+                    bootstrap_servers=self._bootstrap_servers,
+                    api_version=self._kafka_api_version,
+                )
         return self._admin_client
 
     async def list_consumer_group_offsets(
@@ -67,17 +69,19 @@ class KafkaTopicManager:
 
     async def topic_exists(self, topic: str) -> bool:
         if self._client is None:
-            self._client = await run_async(
-                kafka.KafkaConsumer,
-                bootstrap_servers=self._bootstrap_servers,
-                enable_auto_commit=False,
-                api_version=self._kafka_api_version,
-            )
+            with watch_kafka("sync_consumer_connect"):
+                self._client = await run_async(
+                    kafka.KafkaConsumer,
+                    bootstrap_servers=self._bootstrap_servers,
+                    enable_auto_commit=False,
+                    api_version=self._kafka_api_version,
+                )
         if topic in self._topic_cache:
             return True
-        if topic in await run_async(self._client.topics):
-            self._topic_cache.append(topic)
-            return True
+        with watch_kafka("sync_topics"):
+            if topic in await run_async(self._client.topics):
+                self._topic_cache.append(topic)
+                return True
         return False
 
     async def create_topic(
@@ -102,7 +106,8 @@ class KafkaTopicManager:
         )
         client = await self.get_admin_client()
         try:
-            await run_async(client.create_topics, [new_topic])
+            with watch_kafka("sync_create_topics"):
+                await run_async(client.create_topics, [new_topic])
         except kafka.errors.TopicAlreadyExistsError:
             pass
         self._topic_cache.append(topic)

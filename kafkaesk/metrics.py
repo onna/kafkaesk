@@ -1,6 +1,33 @@
+from typing import Dict
+from typing import Optional
+from typing import Type
+
 import prometheus_client as client
+import time
+import traceback
 
 NOERROR = "none"
+ERROR_GENERAL_EXCEPTION = "exception"
+
+KAFKA_ACTION = client.Counter(
+    "kafkaesk_kafka_action", "Perform action on kafka", ["type", "error"],
+)
+
+KAFKA_ACTION_TIME = client.Histogram(
+    "kafkaesk_kafka_action_time", "Time taken to perform kafka action", ["type"],
+)
+
+PUBLISH_MESSAGES = client.Counter(
+    "kafkaesk_publish_messages",
+    "Number of messages attempted to be published",
+    ["stream_id", "error"],
+)
+
+PUBLISH_MESSAGES_TIME = client.Histogram(
+    "kafkaesk_publish_messages_time",
+    "Time taken for a message to be queued for publishing (in seconds)",
+    ["stream_id"],
+)
 
 PUBLISHED_MESSAGES = client.Counter(
     "kafkaesk_published_messages",
@@ -111,3 +138,63 @@ RETRY_CONSUMER_CONSUMED_MESSAGES = client.Counter(
         "retry_stream_partition",
     ],
 )
+
+
+class watch:
+    start: float
+
+    def __init__(
+        self,
+        *,
+        counter: Optional[client.Counter] = None,
+        histogram: Optional[client.Histogram] = None,
+        error_mappings: Dict[str, Type[Exception]] = None,
+        labels: Optional[Dict[str, str]] = None,
+    ):
+        self.counter = counter
+        self.histogram = histogram
+        self.labels = labels or {}
+        self.error_mappings = error_mappings or {}
+
+    def __enter__(self) -> None:
+        self.start = time.time()
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[Exception]],
+        exc_value: Optional[Exception],
+        exc_traceback: Optional[traceback.StackSummary],
+    ) -> None:
+        error = NOERROR
+        if self.histogram is not None:
+            finished = time.time()
+            if len(self.labels) > 0:
+                self.histogram.labels(**self.labels).observe(finished - self.start)
+            else:
+                self.histogram.observe(finished - self.start)
+
+        if self.counter is not None:
+            if exc_value is None:
+                error = NOERROR
+            else:
+                for error_type, mapped_exc_type in self.error_mappings.items():
+                    if isinstance(exc_value, mapped_exc_type):
+                        error = error_type
+                        break
+                else:
+                    error = ERROR_GENERAL_EXCEPTION
+            self.counter.labels(error=error, **self.labels).inc()
+
+
+class watch_kafka(watch):
+    def __init__(self, type: str):
+        super().__init__(counter=KAFKA_ACTION, histogram=KAFKA_ACTION_TIME, labels={"type": type})
+
+
+class watch_publish(watch):
+    def __init__(self, stream_id: str):
+        super().__init__(
+            counter=PUBLISH_MESSAGES,
+            histogram=PUBLISH_MESSAGES_TIME,
+            labels={"stream_id": stream_id},
+        )
