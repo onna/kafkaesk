@@ -8,9 +8,25 @@ from typing import Optional
 import asyncio
 import kafkaesk
 import logging
+import os
 import pydantic
 import socket
 import sys
+
+NAMESPACE_FILEPATH = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+_not_set = object()
+_K8S_NS = _not_set
+
+
+def get_k8s_ns() -> Optional[str]:
+    global _K8S_NS
+    if _K8S_NS == _not_set:
+        if os.path.exists(NAMESPACE_FILEPATH):
+            with open(NAMESPACE_FILEPATH) as fi:
+                _K8S_NS = fi.read()
+        else:
+            _K8S_NS = None
+    return _K8S_NS  # type: ignore
 
 
 class InvalidLogFormat(Exception):
@@ -172,13 +188,15 @@ class PydanticKafkaeskHandler(logging.Handler):
             "stack": record.exc_text,
             "hostname": hostname,
             "service": service_name,
+            "namespace": get_k8s_ns(),
+            "cluster": os.environ.get("CLUSTER"),
         }
 
     def _format_extra_logs(self, record: PydanticLogRecord) -> Dict[str, Any]:
         extra_logs: Dict[str, Any] = {}
 
         for log in getattr(record, "pydantic_data", []):
-            extra_logs.update(log.dict(exclude_none=True, exclude={"_is_log_model",}))
+            extra_logs.update(log.dict(exclude_none=True, exclude={"_is_log_model",},))
 
         return extra_logs
 
