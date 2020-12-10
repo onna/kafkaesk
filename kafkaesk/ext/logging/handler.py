@@ -26,7 +26,7 @@ def get_k8s_ns() -> Optional[str]:
                 _K8S_NS = fi.read()
         else:
             _K8S_NS = None
-    return _K8S_NS
+    return _K8S_NS  # type: ignore
 
 
 class InvalidLogFormat(Exception):
