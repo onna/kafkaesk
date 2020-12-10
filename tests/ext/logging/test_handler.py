@@ -3,6 +3,9 @@ from kafkaesk.ext.logging.handler import PydanticKafkaeskHandler
 from kafkaesk.ext.logging.handler import PydanticLogModel
 from kafkaesk.ext.logging.handler import PydanticStreamHandler
 from typing import Optional
+from unittest.mock import MagicMock
+from unittest.mock import Mock
+from unittest.mock import patch
 
 import asyncio
 import io
@@ -10,6 +13,7 @@ import kafkaesk
 import logging
 import pydantic
 import pytest
+import time
 import uuid
 
 pytestmark = pytest.mark.asyncio
@@ -129,6 +133,31 @@ class TestPydanticKafkaeskHandler:
         assert len(log_consumer) == 1
         assert log_consumer[0].message == "Test Message extra"
         assert log_consumer[0].foo == "bar"
+
+    def test_emit_std_output_queue_full(self):
+        queue = MagicMock()
+        with patch("kafkaesk.ext.logging.handler.KafkaeskQueue", return_value=queue), patch(
+            "kafkaesk.ext.logging.handler.sys.stderr.write"
+        ) as std_write:
+            queue.put_nowait.side_effect = asyncio.QueueFull
+            handler = PydanticKafkaeskHandler(MagicMock(), "foo")
+            record = Mock()
+            record.pydantic_data = []
+            handler.emit(record)
+            std_write.assert_called_once()
+
+    def test_emit_limits_std_output_queue_full(self):
+        queue = MagicMock()
+        with patch("kafkaesk.ext.logging.handler.KafkaeskQueue", return_value=queue), patch(
+            "kafkaesk.ext.logging.handler.sys.stderr.write"
+        ) as std_write:
+            queue.put_nowait.side_effect = asyncio.QueueFull
+            handler = PydanticKafkaeskHandler(MagicMock(), "foo")
+            handler._last_warning_sent = time.time() + 1
+            record = Mock()
+            record.pydantic_data = []
+            handler.emit(record)
+            std_write.assert_not_called()
 
 
 class TestKafkaeskQueue:

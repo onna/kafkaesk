@@ -12,6 +12,7 @@ import os
 import pydantic
 import socket
 import sys
+import time
 
 NAMESPACE_FILEPATH = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 _not_set = object()
@@ -148,6 +149,7 @@ class PydanticKafkaeskHandler(logging.Handler):
         self.stream = stream
 
         self._queue = KafkaeskQueue(self.app)
+        self._last_warning_sent = 0
 
         self._initialize_model()
 
@@ -214,7 +216,9 @@ class PydanticKafkaeskHandler(logging.Handler):
         except RuntimeError:
             sys.stderr.write("Queue No event loop running to send log to Kafka\n")
         except asyncio.QueueFull:
-            sys.stderr.write("Queue hit max log queue size, discarding message\n")
+            if time.time() - self._last_warning_sent > 30:
+                sys.stderr.write("Queue hit max log queue size, discarding message\n")
+                self._last_warning_sent = time.time()
         except AttributeError:
             sys.stderr.write("Queue Error sending Kafkaesk log message\n")
 
