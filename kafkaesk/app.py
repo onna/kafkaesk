@@ -96,6 +96,8 @@ def _pydantic_msg_handler(
     try:
         return model.parse_obj(data["data"])
     except ValidationError:
+        # log the execption so we can see what fields failed
+        logger.warning(f"Error parsing pydantic model: {record}", exc_info=True)
         raise UnhandledMessage(f"Error parsing data: {model}")
 
 

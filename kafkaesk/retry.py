@@ -180,6 +180,13 @@ class RetryPolicy:
         return (handler_key, handler)
 
 
+def _fmt_record(record: ConsumerRecord) -> str:
+    val = repr(record)
+    if len(val) > 512:
+        return val[:512] + "..."
+    return val
+
+
 class RetryHandler(ABC):
     """Base class implementing common logic for RetryHandlers
 
@@ -227,7 +234,8 @@ class RetryHandler(ABC):
         exception: Exception,
     ) -> None:
         self.logger.critical(
-            f"{self.__class__.__name__} handler recieved exception, re-raising exception {record}"
+            f"{self.__class__.__name__} handler recieved exception, "
+            f"re-raising exception {_fmt_record(record)}"
         )
         RETRY_HANDLER_RAISE.labels(
             stream_id=record.topic,
@@ -266,7 +274,8 @@ class RetryHandler(ABC):
         forward_stream_id: str,
     ) -> None:
         self.logger.info(
-            f"{self.__class__.__name__} handler forwarding message to {forward_stream_id}: {record}"
+            f"{self.__class__.__name__} handler forwarding message "
+            f"to {forward_stream_id}: {_fmt_record(record)}"
         )
         await policy.app.publish(
             forward_stream_id,
@@ -305,6 +314,10 @@ class Drop(RetryHandler):
         record: ConsumerRecord,
         exception: Exception,
     ) -> None:
+        self.logger.error(
+            f"{self.__class__.__name__}: Dropping message due to error: {_fmt_record(record)}",
+            exc_info=exception,
+        )
         await self._drop_message(policy, retry_history, record, exception)
 
 
@@ -322,4 +335,8 @@ class Forward(RetryHandler):
         record: ConsumerRecord,
         exception: Exception,
     ) -> None:
+        self.logger.error(
+            f"{self.__class__.__name__}: Forwarding message due to error: {_fmt_record(record)}",
+            exc_info=exception,
+        )
         await self._forward_message(policy, retry_history, record, exception, self.stream_id)
