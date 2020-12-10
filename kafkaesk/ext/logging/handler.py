@@ -149,7 +149,7 @@ class PydanticKafkaeskHandler(logging.Handler):
         self.stream = stream
 
         self._queue = KafkaeskQueue(self.app)
-        self._last_warning_sent = 0
+        self._last_warning_sent = 0.0
 
         self._initialize_model()
 
