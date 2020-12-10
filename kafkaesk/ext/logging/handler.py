@@ -19,9 +19,9 @@ _K8S_NS = _not_set
 
 
 def get_k8s_ns() -> Optional[str]:
+    global _K8S_NS
     if _K8S_NS == _not_set:
         if os.path.exists(NAMESPACE_FILEPATH):
-            global _K8S_NS
             with open(NAMESPACE_FILEPATH) as fi:
                 _K8S_NS = fi.read()
         else:
