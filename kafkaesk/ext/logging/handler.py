@@ -143,17 +143,24 @@ _formatter = logging.Formatter()
 
 class PydanticKafkaeskHandler(logging.Handler):
     def __init__(
-        self, app: kafkaesk.Application, stream: str,
+        self, app: kafkaesk.Application, stream: str, queue: Optional[KafkaeskQueue] = None
     ):
         self.app = app
         self.stream = stream
 
-        self._queue = KafkaeskQueue(self.app)
+        if queue is None:
+            self._queue = KafkaeskQueue(self.app)
+        else:
+            self._queue = queue
+
         self._last_warning_sent = 0.0
 
         self._initialize_model()
 
         super().__init__()
+
+    def clone(self) -> "PydanticKafkaeskHandler":
+        return PydanticKafkaeskHandler(self.app, self.stream, queue=self._queue)
 
     def _initialize_model(self) -> None:
         try:

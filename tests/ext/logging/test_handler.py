@@ -159,6 +159,13 @@ class TestPydanticKafkaeskHandler:
             handler.emit(record)
             std_write.assert_not_called()
 
+    def test_clone(self):
+        handler = PydanticKafkaeskHandler(MagicMock(), "foo")
+        handler2 = handler.clone()
+        assert handler != handler2
+        assert handler.app == handler2.app
+        assert handler._queue == handler2._queue
+
 
 class TestKafkaeskQueue:
     @pytest.fixture(scope="function")
