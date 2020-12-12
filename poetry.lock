@@ -4,7 +4,7 @@ description = "Kafka integration with asyncio."
 name = "aiokafka"
 optional = false
 python-versions = "*"
-version = "0.6.0"
+version = "0.7.0"
 
 [package.dependencies]
 kafka-python = ">=2.0.0"
@@ -19,17 +19,6 @@ name = "appdirs"
 optional = false
 python-versions = "*"
 version = "1.4.4"
-
-[[package]]
-category = "dev"
-description = "Extension to the standard mock framework to support support async"
-name = "asyncmock"
-optional = false
-python-versions = ">=3.6"
-version = "0.4.2"
-
-[package.dependencies]
-mock = "*"
 
 [[package]]
 category = "dev"
@@ -258,19 +247,6 @@ name = "mccabe"
 optional = false
 python-versions = "*"
 version = "0.6.1"
-
-[[package]]
-category = "dev"
-description = "Rolling backport of unittest.mock for all Pythons"
-name = "mock"
-optional = false
-python-versions = ">=3.6"
-version = "4.0.2"
-
-[package.extras]
-build = ["twine", "wheel", "blurb"]
-docs = ["sphinx"]
-test = ["pytest", "pytest-cov"]
 
 [[package]]
 category = "dev"
@@ -732,21 +708,44 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["pytest (>=3.5,<3.7.3 || >3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
 [metadata]
-content-hash = "06d133687b3398c32aefbac617627d63ead6300652c4867518ad82e6e1d3904c"
-lock-version = "1.0"
+content-hash = "d052db40654bf988a8212ef1077380acfc5a98b7bc896f1027672bd3037e8e55"
 python-versions = "^3.7"
 
 [metadata.files]
 aiokafka = [
-    {file = "aiokafka-0.6.0.tar.gz", hash = "sha256:36a5aa5bd681455c59c0de8a0c1bb9cfd2b32d93481bf56e821e9bad24859415"},
+    {file = "aiokafka-0.7.0-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:915456fc9b7fd2f2f19fb3734b1135aef68aac98a7847bf404a3ea49402696fc"},
+    {file = "aiokafka-0.7.0-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:29033fd6007a433d4a1c24504aa8a9b846249ff44691e47964d7892b91236d2f"},
+    {file = "aiokafka-0.7.0-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:a5b994e848ae3cafe49976cb499deff68a548d5c9df2b1bfd3d17d674a006e8e"},
+    {file = "aiokafka-0.7.0-cp36-cp36m-manylinux2010_i686.whl", hash = "sha256:7a9182e82baec5a7c6e0b6b94ec603a6f740659e0fd1045c1d61eff15395f8b7"},
+    {file = "aiokafka-0.7.0-cp36-cp36m-manylinux2010_x86_64.whl", hash = "sha256:1c46e8299cb3e1dceedc86af3b46adc5ac6af3ca16e48881443cd59859b95b9b"},
+    {file = "aiokafka-0.7.0-cp36-cp36m-win32.whl", hash = "sha256:fbedafff654fefb2bdfa0eb5109b8eda19881baa87804a30ff97c1ea2c12eda2"},
+    {file = "aiokafka-0.7.0-cp36-cp36m-win_amd64.whl", hash = "sha256:2d5ca0e1467985c7f7e28b73e557575c413a53bbbedc11a97d74d6beeccca000"},
+    {file = "aiokafka-0.7.0-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:0664dabab3afebc9a39d80a41e4438de21b59f90fac5796038e5776013188938"},
+    {file = "aiokafka-0.7.0-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:09a0747b96da6d3add0b2f271d4aaabd67c0d2113883430c003596017e8a61fc"},
+    {file = "aiokafka-0.7.0-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:776674fbbbc7941b7b6860a1bd501eaf62a173ae4d54d3842aa8c0e551a61388"},
+    {file = "aiokafka-0.7.0-cp37-cp37m-manylinux2010_i686.whl", hash = "sha256:505dc8dd23f18c01cdc0467df6890f2622ffdd570b66be23c748d4560362cfc2"},
+    {file = "aiokafka-0.7.0-cp37-cp37m-manylinux2010_x86_64.whl", hash = "sha256:53ffa97d993867e8dfa62984331af6aa28ce18bdfea410655f0d3fd888cac39a"},
+    {file = "aiokafka-0.7.0-cp37-cp37m-win32.whl", hash = "sha256:bf8db67400f9706ba84dcb0082ee1292095dff87e4ac074092e69403fc6e563a"},
+    {file = "aiokafka-0.7.0-cp37-cp37m-win_amd64.whl", hash = "sha256:1c390e146cb340bbb722c22ef01993ba66d61c37e3d0fe996559a2bebcf53bbb"},
+    {file = "aiokafka-0.7.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:9a165f7c21eea37f2345f97ae52d1231399c66e7640a40087813ff50309cc89d"},
+    {file = "aiokafka-0.7.0-cp38-cp38-manylinux1_i686.whl", hash = "sha256:75c63ef46759d5c1cdb0d152c27c042419d84ac8b15b244c1d6d630cf367758b"},
+    {file = "aiokafka-0.7.0-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:94b26b766329e309d302b54e20b80022d8ba554674044ed85bc6ef89a84b6560"},
+    {file = "aiokafka-0.7.0-cp38-cp38-manylinux2010_i686.whl", hash = "sha256:2a33397136336b9c33269c8f82c210732a697504121cb67afc09a03ef27372ab"},
+    {file = "aiokafka-0.7.0-cp38-cp38-manylinux2010_x86_64.whl", hash = "sha256:50502f434837f604b3d13180cef7f051195fc38c8970e55ea694c64bf41e2e11"},
+    {file = "aiokafka-0.7.0-cp38-cp38-win32.whl", hash = "sha256:7e2f875454f4822fb4701cd45cd4a295f57f9f0695836cb0a3a382ea2ed94b22"},
+    {file = "aiokafka-0.7.0-cp38-cp38-win_amd64.whl", hash = "sha256:af871da87a3a8b0a2788ae2c5f37f2208e3e5372b6e0e6df09851f370844619f"},
+    {file = "aiokafka-0.7.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:efc39946efb2640e0ca46828d8631fa62bd23edfd8f40ee4075e5f0c9bb655d6"},
+    {file = "aiokafka-0.7.0-cp39-cp39-manylinux1_i686.whl", hash = "sha256:8cd5380e1a9356f802988e4f52b2cd255819d82f11655ad86d6cd319b177f48e"},
+    {file = "aiokafka-0.7.0-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:6c76a7bb5d69215dc64bf6c6f646f34f5b7e5c4771e49a1d71922f43d69dd3da"},
+    {file = "aiokafka-0.7.0-cp39-cp39-manylinux2010_i686.whl", hash = "sha256:21cf243a218104ba696dc60cf37e5c773ac2087fb06f3adf012a2a4c9b093c82"},
+    {file = "aiokafka-0.7.0-cp39-cp39-manylinux2010_x86_64.whl", hash = "sha256:0585b34fc53d35bbf26e0a54f0c5d5d0653042b43a769f55df550398c512a172"},
+    {file = "aiokafka-0.7.0-cp39-cp39-win32.whl", hash = "sha256:9a77c3315640ae94010b38c46a4df9c54e8f29d3f8d706ff398b35754cdb23c5"},
+    {file = "aiokafka-0.7.0-cp39-cp39-win_amd64.whl", hash = "sha256:48dac32e19f596514f0e3fc0a75079cbeaddb4c196696fd7da8c5a27f163dfac"},
+    {file = "aiokafka-0.7.0.tar.gz", hash = "sha256:2a4bf3a7afc6406cb37c153256c35629c1d69caf63e4a3b5b1c3863d97a17b74"},
 ]
 appdirs = [
     {file = "appdirs-1.4.4-py2.py3-none-any.whl", hash = "sha256:a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128"},
     {file = "appdirs-1.4.4.tar.gz", hash = "sha256:7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41"},
-]
-asyncmock = [
-    {file = "asyncmock-0.4.2-py3-none-any.whl", hash = "sha256:fd8bc4e7813251a8959d1140924ccba3adbbc7af885dba7047c67f73c0b664b1"},
-    {file = "asyncmock-0.4.2.tar.gz", hash = "sha256:c251889d542e98fe5f7ece2b5b8643b7d62b50a5657d34a4cbce8a1d5170d750"},
 ]
 atomicwrites = [
     {file = "atomicwrites-1.4.0-py2.py3-none-any.whl", hash = "sha256:6d1784dea7c0c8d4a5172b6c620f40b6e4cbfdf96d783691f2e1302a7b88e197"},
@@ -851,10 +850,6 @@ kafka-python = [
 mccabe = [
     {file = "mccabe-0.6.1-py2.py3-none-any.whl", hash = "sha256:ab8a6258860da4b6677da4bd2fe5dc2c659cff31b3ee4f7f5d64e79735b80d42"},
     {file = "mccabe-0.6.1.tar.gz", hash = "sha256:dd8d182285a0fe56bace7f45b5e7d1a6ebcbf524e8f3bd87eb0f125271b8831f"},
-]
-mock = [
-    {file = "mock-4.0.2-py3-none-any.whl", hash = "sha256:3f9b2c0196c60d21838f307f5825a7b86b678cedc58ab9e50a8988187b4d81e0"},
-    {file = "mock-4.0.2.tar.gz", hash = "sha256:dd33eb70232b6118298d516bbcecd26704689c386594f0f3c4f13867b2c56f72"},
 ]
 more-itertools = [
     {file = "more-itertools-8.6.0.tar.gz", hash = "sha256:b3a9005928e5bed54076e6e549c792b306fddfe72b2d1d22dd63d42d5d3899cf"},
@@ -1084,19 +1079,28 @@ typed-ast = [
     {file = "typed_ast-1.4.1-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:269151951236b0f9a6f04015a9004084a5ab0d5f19b57de779f908621e7d8b75"},
     {file = "typed_ast-1.4.1-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:24995c843eb0ad11a4527b026b4dde3da70e1f2d8806c99b7b4a7cf491612652"},
     {file = "typed_ast-1.4.1-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:fe460b922ec15dd205595c9b5b99e2f056fd98ae8f9f56b888e7a17dc2b757e7"},
+    {file = "typed_ast-1.4.1-cp36-cp36m-manylinux2014_aarch64.whl", hash = "sha256:fcf135e17cc74dbfbc05894ebca928ffeb23d9790b3167a674921db19082401f"},
     {file = "typed_ast-1.4.1-cp36-cp36m-win32.whl", hash = "sha256:4e3e5da80ccbebfff202a67bf900d081906c358ccc3d5e3c8aea42fdfdfd51c1"},
     {file = "typed_ast-1.4.1-cp36-cp36m-win_amd64.whl", hash = "sha256:249862707802d40f7f29f6e1aad8d84b5aa9e44552d2cc17384b209f091276aa"},
     {file = "typed_ast-1.4.1-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:8ce678dbaf790dbdb3eba24056d5364fb45944f33553dd5869b7580cdbb83614"},
     {file = "typed_ast-1.4.1-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:c9e348e02e4d2b4a8b2eedb48210430658df6951fa484e59de33ff773fbd4b41"},
     {file = "typed_ast-1.4.1-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:bcd3b13b56ea479b3650b82cabd6b5343a625b0ced5429e4ccad28a8973f301b"},
+    {file = "typed_ast-1.4.1-cp37-cp37m-manylinux2014_aarch64.whl", hash = "sha256:f208eb7aff048f6bea9586e61af041ddf7f9ade7caed625742af423f6bae3298"},
     {file = "typed_ast-1.4.1-cp37-cp37m-win32.whl", hash = "sha256:d5d33e9e7af3b34a40dc05f498939f0ebf187f07c385fd58d591c533ad8562fe"},
     {file = "typed_ast-1.4.1-cp37-cp37m-win_amd64.whl", hash = "sha256:0666aa36131496aed8f7be0410ff974562ab7eeac11ef351def9ea6fa28f6355"},
     {file = "typed_ast-1.4.1-cp38-cp38-macosx_10_15_x86_64.whl", hash = "sha256:d205b1b46085271b4e15f670058ce182bd1199e56b317bf2ec004b6a44f911f6"},
     {file = "typed_ast-1.4.1-cp38-cp38-manylinux1_i686.whl", hash = "sha256:6daac9731f172c2a22ade6ed0c00197ee7cc1221aa84cfdf9c31defeb059a907"},
     {file = "typed_ast-1.4.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:498b0f36cc7054c1fead3d7fc59d2150f4d5c6c56ba7fb150c013fbc683a8d2d"},
+    {file = "typed_ast-1.4.1-cp38-cp38-manylinux2014_aarch64.whl", hash = "sha256:7e4c9d7658aaa1fc80018593abdf8598bf91325af6af5cce4ce7c73bc45ea53d"},
     {file = "typed_ast-1.4.1-cp38-cp38-win32.whl", hash = "sha256:715ff2f2df46121071622063fc7543d9b1fd19ebfc4f5c8895af64a77a8c852c"},
     {file = "typed_ast-1.4.1-cp38-cp38-win_amd64.whl", hash = "sha256:fc0fea399acb12edbf8a628ba8d2312f583bdbdb3335635db062fa98cf71fca4"},
     {file = "typed_ast-1.4.1-cp39-cp39-macosx_10_15_x86_64.whl", hash = "sha256:d43943ef777f9a1c42bf4e552ba23ac77a6351de620aa9acf64ad54933ad4d34"},
+    {file = "typed_ast-1.4.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:92c325624e304ebf0e025d1224b77dd4e6393f18aab8d829b5b7e04afe9b7a2c"},
+    {file = "typed_ast-1.4.1-cp39-cp39-manylinux1_i686.whl", hash = "sha256:d648b8e3bf2fe648745c8ffcee3db3ff903d0817a01a12dd6a6ea7a8f4889072"},
+    {file = "typed_ast-1.4.1-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:fac11badff8313e23717f3dada86a15389d0708275bddf766cca67a84ead3e91"},
+    {file = "typed_ast-1.4.1-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:0d8110d78a5736e16e26213114a38ca35cb15b6515d535413b090bd50951556d"},
+    {file = "typed_ast-1.4.1-cp39-cp39-win32.whl", hash = "sha256:b52ccf7cfe4ce2a1064b18594381bccf4179c2ecf7f513134ec2f993dd4ab395"},
+    {file = "typed_ast-1.4.1-cp39-cp39-win_amd64.whl", hash = "sha256:3742b32cf1c6ef124d57f95be609c473d7ec4c14d0090e5a5e05a15269fb4d0c"},
     {file = "typed_ast-1.4.1.tar.gz", hash = "sha256:8c8aaad94455178e3187ab22c8b01a3837f8ee50e09cf31f1ba129eb293ec30b"},
 ]
 typing-extensions = [
