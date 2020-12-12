@@ -180,7 +180,8 @@ class SubscriptionConsumer:
                 try:
                     await self._run()
                 except aiokafka.errors.KafkaConnectionError:
-                    logger.warning("Connection error", exc_info=True)
+                    logger.warning("Connection error, retrying", exc_info=True)
+                    await asyncio.sleep(0.5)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
             logger.debug("Consumer stopped, exiting")
         finally:
@@ -228,6 +229,7 @@ class SubscriptionConsumer:
                     del to_commit[tp]
             if len(to_commit) > 0:
                 await self.consumer.commit(to_commit)
+                logging.debug(f"Committed offsets: {to_commit}")
         except kafka.errors.CommitFailedError:
             # try to commit again but we need to combine
             # what could now be in the commit from when we started
@@ -236,9 +238,9 @@ class SubscriptionConsumer:
                     self._to_commit[tp] = max(to_commit[tp], self._to_commit[tp])
                 else:
                     self._to_commit[tp] = to_commit[tp]
-            logging.debug("Failed to commit offsets", exc_info=True)
+            logging.info("Failed to commit offsets", exc_info=True)
         except kafka.errors.IllegalStateError:
-            logging.debug("Failed to commit offsets, rebalanced likely", exc_info=True)
+            logging.info("Failed to commit offsets, rebalanced likely", exc_info=True)
 
     def record_commit(self, record: aiokafka.structs.ConsumerRecord) -> None:
         self._to_commit[TopicPartition(record.topic, record.partition)] = record.offset + 1
