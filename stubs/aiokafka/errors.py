@@ -20,3 +20,7 @@ class UnrecognizedBrokerVersion(Exception):
 
 class KafkaConnectionError(Exception):
     ...
+
+
+class CommitFailedError(Exception):
+    ...

@@ -20,6 +20,14 @@ def subscription():
     yield SubscriptionConsumer(Application(), Subscription("foo", lambda: 1, "group"))
 
 
+def _record(topic="topic", partition=1, offset=1):
+    record = Mock()
+    record.topic = topic
+    record.partition = partition
+    record.offset = offset
+    return record
+
+
 async def test_consumer_property_rasises_exception(subscription):
     with pytest.raises(RuntimeError):
         subscription.consumer
@@ -53,10 +61,7 @@ async def test_lifecycle_logs_exits(subscription, caplog):
 async def test_commit(subscription):
     subscription._consumer = AsyncMock()
     subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
-    record = Mock()
-    record.topic = "topic"
-    record.partition = 1
-    record.offset = 1
+    record = _record()
 
     subscription.record_commit(record)
 
@@ -69,10 +74,7 @@ async def test_commit(subscription):
 async def test_do_not_commit_when_assignment_changed(subscription):
     subscription._consumer = AsyncMock()
     subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 2)])
-    record = Mock()
-    record.topic = "topic"
-    record.partition = 1
-    record.offset = 1
+    record = _record()
 
     subscription.record_commit(record)
 
@@ -84,10 +86,7 @@ async def test_do_not_commit_when_assignment_changed(subscription):
 async def test_commit_failed_keeps_record(subscription):
     subscription._consumer = AsyncMock()
     subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
-    record = Mock()
-    record.topic = "topic"
-    record.partition = 1
-    record.offset = 1
+    record = _record()
 
     subscription.record_commit(record)
 
@@ -100,10 +99,7 @@ async def test_commit_failed_keeps_record(subscription):
 async def test_commit_failed_handles_new_records(subscription):
     subscription._consumer = AsyncMock()
     subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
-    record = Mock()
-    record.topic = "topic"
-    record.partition = 1
-    record.offset = 1
+    record = _record()
 
     subscription.record_commit(record)
 
@@ -115,10 +111,7 @@ async def test_commit_failed_handles_new_records(subscription):
     task = asyncio.create_task(subscription.commit())
     await asyncio.sleep(0.005)
     # now, record new message
-    record = Mock()
-    record.topic = "topic"
-    record.partition = 1
-    record.offset = 2
+    record = _record(offset=2)
 
     subscription.record_commit(record)
 
@@ -130,10 +123,7 @@ async def test_commit_failed_handles_new_records(subscription):
 async def test_commit_drop_when_rebalance(subscription):
     subscription._consumer = AsyncMock()
     subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
-    record = Mock()
-    record.topic = "topic"
-    record.partition = 1
-    record.offset = 1
+    record = _record()
 
     subscription.record_commit(record)
 
@@ -141,3 +131,47 @@ async def test_commit_drop_when_rebalance(subscription):
     await subscription.commit()
 
     assert len(subscription._to_commit) == 0
+
+
+async def test_commit_interval(subscription):
+    subscription._consumer = AsyncMock()
+    subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
+    record = _record()
+
+    subscription.record_commit(record)
+
+    result = await subscription.commit()
+    # less than 2 seconds
+    assert result == pytest.approx(2.0, 0.1)
+
+
+async def test_commit_interval_on_retry(subscription):
+    subscription._consumer = AsyncMock()
+    subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
+    record = _record()
+    subscription.record_commit(record)
+
+    subscription.consumer.commit.side_effect = aiokafka.errors.CommitFailedError
+
+    result = await subscription.commit()
+    # 200 ms
+    assert result == pytest.approx(0.2, 0.1)
+
+
+async def test_commit_interval_on_exception(subscription):
+    subscription._consumer = AsyncMock()
+    subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
+    record = _record()
+    subscription.record_commit(record)
+
+    subscription.consumer.commit.side_effect = Exception
+
+    result = await subscription.commit()
+    # less than 2 seconds
+    assert result == pytest.approx(2.0, 0.1)
+
+
+async def test_commit_interval_no_commit(subscription):
+    subscription._consumer = AsyncMock()
+    subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
+    assert await subscription.commit() is None

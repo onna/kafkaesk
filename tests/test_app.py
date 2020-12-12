@@ -1,5 +1,7 @@
+from unittest.mock import ANY
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import kafkaesk
 import kafkaesk.exceptions
@@ -81,3 +83,55 @@ async def test_consumer_health_check_raises_exception_if_commit_task_done():
     app._subscription_consumers.append(subscription_consumer)
     with pytest.raises(kafkaesk.exceptions.AutoCommitError):
         await app.health_check()
+
+
+async def test_configure_kafka_producer():
+    app = kafkaesk.Application(
+        kafka_settings={
+            "metadata_max_age_ms": 100,
+            "max_batch_size": 100,
+            # invalid for producer so should not be applied here
+            "max_partition_fetch_bytes": 100,
+        }
+    )
+    # verify it is created correctly
+    app.producer_factory()
+
+    # now, validate the wiring
+    with patch("kafkaesk.app.aiokafka.AIOKafkaProducer") as mock:
+        app.producer_factory()
+        mock.assert_called_with(
+            bootstrap_servers=None,
+            loop=ANY,
+            api_version="auto",
+            metadata_max_age_ms=100,
+            max_batch_size=100,
+        )
+
+
+async def test_configure_kafka_consumer():
+    app = kafkaesk.Application(
+        kafka_settings={
+            "max_partition_fetch_bytes": 100,
+            "fetch_max_wait_ms": 100,
+            "metadata_max_age_ms": 100,
+            # invalid for consumer so should not be applied here
+            "max_batch_size": 100,
+        }
+    )
+    # verify it is created correctly
+    app.consumer_factory(group_id="foobar")
+
+    # now, validate the wiring
+    with patch("kafkaesk.app.aiokafka.AIOKafkaConsumer") as mock:
+        app.consumer_factory(group_id="foobar")
+        mock.assert_called_with(
+            bootstrap_servers=None,
+            loop=ANY,
+            group_id="foobar",
+            api_version="auto",
+            enable_auto_commit=False,
+            max_partition_fetch_bytes=100,
+            fetch_max_wait_ms=100,
+            metadata_max_age_ms=100,
+        )
