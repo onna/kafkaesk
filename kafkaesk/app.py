@@ -42,7 +42,6 @@ import argparse
 import asyncio
 import fnmatch
 import inspect
-import kafka.errors
 import logging
 import opentracing
 import orjson
@@ -132,6 +131,32 @@ def _published_callback(topic: str, start_time: float, fut: Future) -> None:
     PUBLISHED_MESSAGES_TIME.labels(stream_id=topic).observe(finish_time - start_time)
 
 
+_aiokafka_consumer_settings = (
+    "fetch_max_wait_ms",
+    "fetch_max_bytes",
+    "fetch_min_bytes",
+    "max_partition_fetch_bytes",
+    "request_timeout_ms",
+    "auto_offset_reset",
+    "metadata_max_age_ms",
+    "max_poll_interval_ms",
+    "rebalance_timeout_ms",
+    "session_timeout_ms",
+    "heartbeat_interval_ms",
+    "consumer_timeout_ms",
+    "max_poll_records",
+    "connections_max_idle_ms",
+)
+_aiokafka_producer_settings = (
+    "metadata_max_age_ms",
+    "request_timeout_ms",
+    "max_batch_size",
+    "max_request_size",
+    "send_backoff_ms",
+    "retry_backoff_ms",
+)
+
+
 class SubscriptionConsumer:
     _consumer: Optional[aiokafka.AIOKafkaConsumer] = None
     _to_commit: Dict[TopicPartition, int]
@@ -200,15 +225,17 @@ class SubscriptionConsumer:
             self._auto_commit_task.cancel()
 
     async def _auto_commit(self) -> None:
+        default_to = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
         while True:
+            to = default_to
             try:
-                await asyncio.sleep(self._app.auto_commit_interval_ms / 1000)
-                await self.commit()
+                await asyncio.sleep(to)
+                to = await self.commit() or default_to
             except (RuntimeError, asyncio.CancelledError):
                 logger.debug("Exiting auto commit task")
                 return
 
-    async def commit(self) -> None:
+    async def commit(self) -> Optional[float]:
         """
         Commit current state
         """
@@ -216,9 +243,14 @@ class SubscriptionConsumer:
             async with self._commit_lock:
                 # it's possible to commit on exit as well
                 # so let's make sure to use lock here
-                await self._commit()
+                return await self._commit()
+        return None
 
-    async def _commit(self) -> None:
+    async def _commit(self) -> float:
+        now = time.monotonic()
+        interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
+        backoff = self._app.kafka_settings.get("retry_backoff_ms", 200) / 1000
+
         to_commit = self._to_commit
         try:
             self._to_commit = {}
@@ -230,30 +262,25 @@ class SubscriptionConsumer:
             if len(to_commit) > 0:
                 await self.consumer.commit(to_commit)
                 logging.debug(f"Committed offsets: {to_commit}")
-        except kafka.errors.CommitFailedError:
+        except aiokafka.errors.CommitFailedError:
             # try to commit again but we need to combine
             # what could now be in the commit from when we started
+            logging.info("Failed to commit offsets, rebalanced likely. Retrying.", exc_info=True)
             for tp in to_commit.keys():
                 if tp in self._to_commit:
                     self._to_commit[tp] = max(to_commit[tp], self._to_commit[tp])
                 else:
                     self._to_commit[tp] = to_commit[tp]
-            logging.info("Failed to commit offsets", exc_info=True)
-        except kafka.errors.IllegalStateError:
-            logging.info("Failed to commit offsets, rebalanced likely", exc_info=True)
+            return backoff
+        except Exception:
+            logging.exception("Unhandled exception committed offsets", exc_info=True)
+        return max(0, (now + interval) - time.monotonic())
 
     def record_commit(self, record: aiokafka.structs.ConsumerRecord) -> None:
         self._to_commit[TopicPartition(record.topic, record.partition)] = record.offset + 1
 
     async def _run(self) -> None:
-        self._consumer = aiokafka.AIOKafkaConsumer(
-            bootstrap_servers=cast(List[str], self._app._kafka_servers),
-            loop=asyncio.get_event_loop(),
-            group_id=self._subscription.group,
-            api_version=self._app._kafka_api_version,
-            enable_auto_commit=False,
-            **self._app._kafka_settings or {},
-        )
+        self._consumer = self._app.consumer_factory(self._subscription.group)
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
         listener = CustomConsumerRebalanceListener(
             self._consumer, self._app, self._subscription.group
@@ -461,7 +488,6 @@ class Application(Router):
         replication_factor: Optional[int] = None,
         kafka_api_version: str = "auto",
         auto_commit: bool = True,
-        auto_commit_interval_ms: int = 2000,
     ):
         super().__init__()
         self._kafka_servers = kafka_servers
@@ -478,7 +504,10 @@ class Application(Router):
         self._subscription_consumers_tasks: List[asyncio.Task] = []
 
         self.auto_commit = auto_commit
-        self.auto_commit_interval_ms = auto_commit_interval_ms
+
+    @property
+    def kafka_settings(self) -> Dict[str, Any]:
+        return self._kafka_settings or {}
 
     def mount(self, router: Router) -> None:
         self._subscriptions.extend(router.subscriptions)
@@ -616,13 +645,27 @@ class Application(Router):
             return not self._producer._sender.sender_task.done()
         return True
 
+    def consumer_factory(self, group_id: str) -> aiokafka.AIOKafkaConsumer:
+        return aiokafka.AIOKafkaConsumer(
+            bootstrap_servers=cast(List[str], self._kafka_servers),
+            loop=asyncio.get_event_loop(),
+            group_id=group_id,
+            api_version=self._kafka_api_version,
+            enable_auto_commit=False,
+            **{k: v for k, v in self.kafka_settings.items() if k in _aiokafka_consumer_settings},
+        )
+
+    def producer_factory(self) -> aiokafka.AIOKafkaProducer:
+        return aiokafka.AIOKafkaProducer(
+            bootstrap_servers=cast(List[str], self._kafka_servers),
+            loop=asyncio.get_event_loop(),
+            api_version=self._kafka_api_version,
+            **{k: v for k, v in self.kafka_settings.items() if k in _aiokafka_producer_settings},
+        )
+
     async def _get_producer(self) -> aiokafka.AIOKafkaProducer:
         if self._producer is None:
-            self._producer = aiokafka.AIOKafkaProducer(
-                bootstrap_servers=cast(List[str], self._kafka_servers),
-                loop=asyncio.get_event_loop(),
-                api_version=self._kafka_api_version,
-            )
+            self._producer = self.producer_factory()
             with watch_kafka("producer_start"):
                 await self._producer.start()
         return self._producer
