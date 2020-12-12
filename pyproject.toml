@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kafkaesk"
-version = "0.2.1"
+version = "0.2.2"
 description = "Easy publish and subscribe to events with python and Kafka."
 authors = ["vangheem <vangheem@gmail.com>", "pfreixes <pfreixes@gmail.com>"]
 classifiers = [
@@ -16,7 +16,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-aiokafka = "^0.6.0"
+aiokafka = "^0.7.0"
 kafka-python = "^2.0.1"
 pydantic = "^1.5.1"
 orjson = "3.3.1"
@@ -36,7 +36,6 @@ pytest-rerunfailures = "^9.0"
 pytest-cov = "^2.8.1"
 pdbpp = "^0.10.2"
 python-language-server = "^0.35.1"
-asyncmock = "^0.4.2"
 
 [tool.poetry.scripts]
 kafkaesk = 'kafkaesk.app:run'

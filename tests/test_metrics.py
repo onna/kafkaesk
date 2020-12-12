@@ -1,7 +1,7 @@
 from aiokafka.structs import OffsetAndMetadata
 from aiokafka.structs import TopicPartition
-from asyncmock import AsyncMock
 from kafkaesk.app import CustomConsumerRebalanceListener
+from unittest.mock import AsyncMock
 from unittest.mock import patch
 
 import pytest
