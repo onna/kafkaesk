@@ -239,11 +239,10 @@ class SubscriptionConsumer:
         """
         Commit current state
         """
-        if len(self._to_commit) > 0:
-            async with self._commit_lock:
-                # it's possible to commit on exit as well
-                # so let's make sure to use lock here
-                return await self._commit()
+        async with self._commit_lock:
+            # it's possible to commit on exit as well
+            # so let's make sure to use lock here
+            return await self._commit()
         return None
 
     async def _commit(self) -> float:
@@ -259,9 +258,8 @@ class SubscriptionConsumer:
                 if tp not in assignment:
                     # clean if we got a new assignment
                     del to_commit[tp]
-            if len(to_commit) > 0:
-                await self.consumer.commit(to_commit)
-                logging.debug(f"Committed offsets: {to_commit}")
+            await self.consumer.commit(to_commit)
+            logging.debug(f"Committed offsets: {to_commit}")
         except aiokafka.errors.CommitFailedError:
             # try to commit again but we need to combine
             # what could now be in the commit from when we started

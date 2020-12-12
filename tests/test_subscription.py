@@ -71,18 +71,6 @@ async def test_commit(subscription):
     subscription.consumer.commit.assert_called_with({TopicPartition("topic", 1): 2})
 
 
-async def test_do_not_commit_when_assignment_changed(subscription):
-    subscription._consumer = AsyncMock()
-    subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 2)])
-    record = _record()
-
-    subscription.record_commit(record)
-
-    await subscription.commit()
-
-    subscription.consumer.commit.assert_not_called()
-
-
 async def test_commit_failed_keeps_record(subscription):
     subscription._consumer = AsyncMock()
     subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
@@ -169,9 +157,3 @@ async def test_commit_interval_on_exception(subscription):
     result = await subscription.commit()
     # less than 2 seconds
     assert result == pytest.approx(2.0, 0.1)
-
-
-async def test_commit_interval_no_commit(subscription):
-    subscription._consumer = AsyncMock()
-    subscription._consumer.assignment = MagicMock(return_value=[TopicPartition("topic", 1)])
-    assert await subscription.commit() is None
