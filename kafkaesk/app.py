@@ -226,12 +226,52 @@ class SubscriptionConsumer:
 
     async def _auto_commit(self) -> None:
         default_to = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
+        assignment = None
+
         while True:
             to = default_to
             try:
                 await asyncio.sleep(to)
-                to = await self.commit() or default_to
-            except (RuntimeError, asyncio.CancelledError):
+
+                # pulled from auto commit handler in aiokafka that
+                # still commits on error
+
+                subscription = self.consumer._subscription.subscription
+                if subscription is not None and not subscription.active:
+                    # The subscription can change few times, so we can not rely on
+                    # flags or topic lists. For example if user changes
+                    # subscription from X to Y and back to X we still need to
+                    # rejoin group.
+                    self.consumer._coordinator.request_rejoin()
+                    subscription = self.consumer._subscription.subscription
+                if subscription is None:
+                    await asyncio.wait(
+                        [self.consumer._subscription.wait_for_subscription()],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    subscription = self.consumer._subscription.subscription
+                assert subscription is not None and subscription.active
+                auto_assigned = self.consumer._subscription.partitions_auto_assigned()
+
+                try:
+                    await self.consumer._coordinator.ensure_coordinator_known()
+                    if auto_assigned and self.consumer._coordinator.need_rejoin(subscription):
+                        new_assignment = await self.consumer._coordinator.ensure_active_group(
+                            subscription, assignment
+                        )
+                        if new_assignment is None or not new_assignment.active:
+                            continue
+                        else:
+                            assignment = new_assignment
+                    else:
+                        assignment = subscription.assignment
+
+                    assert assignment is not None and assignment.active
+
+                    to = await self.commit() or default_to
+                except aiokafka.errors.KafkaError:
+                    logger.warning("Error with autocommit", exc_info=True)
+            except (RuntimeError, asyncio.CancelledError, AssertionError):
                 logger.debug("Exiting auto commit task")
                 return
 
@@ -263,13 +303,15 @@ class SubscriptionConsumer:
         except aiokafka.errors.CommitFailedError:
             # try to commit again but we need to combine
             # what could now be in the commit from when we started
-            logging.info("Failed to commit offsets, rebalanced likely. Retrying.", exc_info=True)
+            logging.info("Failed to commit offsets, Retrying.")
             for tp in to_commit.keys():
                 if tp in self._to_commit:
                     self._to_commit[tp] = max(to_commit[tp], self._to_commit[tp])
                 else:
                     self._to_commit[tp] = to_commit[tp]
             return backoff
+        except aiokafka.errors.IllegalStateError:
+            logging.info("Attempt to commit unassigned partition")
         except Exception:
             logging.exception("Unhandled exception committed offsets", exc_info=True)
         return max(0, (now + interval) - time.monotonic())

@@ -51,10 +51,33 @@ class AIOKafkaClient:
 class GroupCoordinator:
     coordinator_id: str
 
+    def request_rejoin(self) -> None:
+        ...
+
+    def need_rejoin(self, subscription: "Subscription") -> bool:
+        ...
+
+    async def ensure_coordinator_known(self) -> None:
+        ...
+
+    async def ensure_active_group(self, subscription: Any, assignment: Any) -> None:
+        ...
+
+
+class Subscription:
+    subscription: Any
+
+    async def wait_for_subscription(self) -> None:
+        ...
+
+    async def partitions_auto_assigned(self) -> bool:
+        ...
+
 
 class AIOKafkaConsumer:
     _client: AIOKafkaClient
     _coordinator: GroupCoordinator
+    _subscription: Subscription
 
     def __init__(
         self,

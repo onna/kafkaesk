@@ -1,26 +1,30 @@
-class NodeNotReadyError(Exception):
+class KafkaError(Exception):
     ...
 
 
-class RequestTimedOutError(Exception):
+class NodeNotReadyError(KafkaError):
     ...
 
 
-class ConsumerStoppedError(Exception):
+class RequestTimedOutError(KafkaError):
     ...
 
 
-class IllegalStateError(Exception):
+class ConsumerStoppedError(KafkaError):
     ...
 
 
-class UnrecognizedBrokerVersion(Exception):
+class IllegalStateError(KafkaError):
     ...
 
 
-class KafkaConnectionError(Exception):
+class UnrecognizedBrokerVersion(KafkaError):
     ...
 
 
-class CommitFailedError(Exception):
+class KafkaConnectionError(KafkaError):
+    ...
+
+
+class CommitFailedError(KafkaError):
     ...
