@@ -228,8 +228,8 @@ class SubscriptionConsumer:
         default_to = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
         assignment = None
 
+        to = default_to
         while True:
-            to = default_to
             try:
                 await asyncio.sleep(to)
 
@@ -271,9 +271,11 @@ class SubscriptionConsumer:
                     to = await self.commit() or default_to
                 except aiokafka.errors.KafkaError:
                     logger.warning("Error with autocommit", exc_info=True)
-            except (RuntimeError, asyncio.CancelledError, AssertionError):
-                logger.debug("Exiting auto commit task")
+            except (RuntimeError, asyncio.CancelledError):
+                logger.info("Exiting auto commit task")
                 return
+            except Exception:
+                logger.exception("Unhandled error in auto commit routine, retrying")
 
     async def commit(self) -> Optional[float]:
         """
