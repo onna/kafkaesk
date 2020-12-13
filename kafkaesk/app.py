@@ -236,24 +236,24 @@ class SubscriptionConsumer:
                 # pulled from auto commit handler in aiokafka that
                 # still commits on error
 
-                subscription = self.consumer._subscription.subscription
-                if subscription is not None and not subscription.active:
-                    # The subscription can change few times, so we can not rely on
-                    # flags or topic lists. For example if user changes
-                    # subscription from X to Y and back to X we still need to
-                    # rejoin group.
-                    self.consumer._coordinator.request_rejoin()
-                    subscription = self.consumer._subscription.subscription
-                if subscription is None:
-                    await asyncio.wait(
-                        [self.consumer._subscription.wait_for_subscription()],
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    subscription = self.consumer._subscription.subscription
-                assert subscription is not None and subscription.active
-                auto_assigned = self.consumer._subscription.partitions_auto_assigned()
-
                 try:
+                    subscription = self.consumer._subscription.subscription
+                    if subscription is not None and not subscription.active:
+                        # The subscription can change few times, so we can not rely on
+                        # flags or topic lists. For example if user changes
+                        # subscription from X to Y and back to X we still need to
+                        # rejoin group.
+                        self.consumer._coordinator.request_rejoin()
+                        subscription = self.consumer._subscription.subscription
+                    if subscription is None:
+                        await asyncio.wait(
+                            [self.consumer._subscription.wait_for_subscription()],
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        subscription = self.consumer._subscription.subscription
+                    assert subscription is not None and subscription.active
+                    auto_assigned = self.consumer._subscription.partitions_auto_assigned()
+
                     await self.consumer._coordinator.ensure_coordinator_known()
                     if auto_assigned and self.consumer._coordinator.need_rejoin(subscription):
                         new_assignment = await self.consumer._coordinator.ensure_active_group(
@@ -267,12 +267,14 @@ class SubscriptionConsumer:
                         assignment = subscription.assignment
 
                     assert assignment is not None and assignment.active
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("Error with auto commit coordinator", exc_info=True)
 
-                    to = await self.commit() or default_to
-                except aiokafka.errors.KafkaError:
-                    logger.warning("Error with autocommit", exc_info=True)
+                to = await asyncio.shield(self.commit()) or default_to
             except (RuntimeError, asyncio.CancelledError):
-                logger.info("Exiting auto commit task")
+                logger.info("Exiting auto commit task", exc_info=True)
                 return
             except Exception:
                 logger.exception("Unhandled error in auto commit routine, retrying")
