@@ -1,4 +1,3 @@
-from .exceptions import AutoCommitError
 from .exceptions import ConsumerUnhealthyException
 from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
@@ -19,7 +18,6 @@ from .metrics import watch_publish
 from .retry import RetryHandler
 from .retry import RetryPolicy
 from .utils import resolve_dotted_name
-from aiokafka.structs import TopicPartition
 from asyncio.futures import Future
 from functools import partial
 from opentracing.scope_managers.contextvars import ContextVarsScopeManager
