@@ -166,6 +166,19 @@ class TestPydanticKafkaeskHandler:
         assert handler.app == handler2.app
         assert handler._queue == handler2._queue
 
+    def test_emit_drops_message_on_runtime_error_start(self):
+        queue = MagicMock()
+        with patch("kafkaesk.ext.logging.handler.KafkaeskQueue", return_value=queue), patch(
+            "kafkaesk.ext.logging.handler.sys.stderr.write"
+        ) as std_write:
+            queue.running = False
+            queue.start.side_effect = RuntimeError
+            handler = PydanticKafkaeskHandler(MagicMock(), "foo")
+            record = Mock()
+            record.pydantic_data = []
+            handler.emit(record)
+            std_write.assert_called_once()
+
 
 class TestKafkaeskQueue:
     @pytest.fixture(scope="function")
