@@ -72,19 +72,6 @@ async def test_consumer_health_check_raises_exception():
         await app.health_check()
 
 
-async def test_consumer_health_check_raises_exception_if_commit_task_done():
-    app = kafkaesk.Application()
-    subscription_consumer = kafkaesk.SubscriptionConsumer(
-        app, kafkaesk.Subscription("foo", lambda: 1, "group")
-    )
-    subscription_consumer._consumer = MagicMock()
-    subscription_consumer._auto_commit_task = MagicMock()
-    subscription_consumer._auto_commit_task.done.return_value = True
-    app._subscription_consumers.append(subscription_consumer)
-    with pytest.raises(kafkaesk.exceptions.AutoCommitError):
-        await app.health_check()
-
-
 async def test_configure_kafka_producer():
     app = kafkaesk.Application(
         kafka_settings={

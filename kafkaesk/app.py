@@ -1,4 +1,3 @@
-from .exceptions import AutoCommitError
 from .exceptions import ConsumerUnhealthyException
 from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
@@ -19,7 +18,6 @@ from .metrics import watch_publish
 from .retry import RetryHandler
 from .retry import RetryPolicy
 from .utils import resolve_dotted_name
-from aiokafka.structs import TopicPartition
 from asyncio.futures import Future
 from functools import partial
 from opentracing.scope_managers.contextvars import ContextVarsScopeManager
@@ -159,8 +157,6 @@ _aiokafka_producer_settings = (
 
 class SubscriptionConsumer:
     _consumer: Optional[aiokafka.AIOKafkaConsumer] = None
-    _to_commit: Dict[TopicPartition, int]
-    _auto_commit_task: Optional[asyncio.Task] = None
 
     def __init__(
         self,
@@ -171,8 +167,7 @@ class SubscriptionConsumer:
         self._app = app
         self._subscription = subscription
         self._event_handlers = event_handlers or {}
-        self._to_commit = {}
-        self._commit_lock = asyncio.Lock()
+        self._last_commit = time.monotonic()
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -183,8 +178,6 @@ class SubscriptionConsumer:
     async def healthy(self) -> None:
         if self._consumer is None:
             return
-        if self._auto_commit_task is not None and self._auto_commit_task.done():
-            raise AutoCommitError(self, "No auto commit task running")
         if not await self._consumer._client.ready(self._consumer._coordinator.coordinator_id):
             raise ConsumerUnhealthyException(self, "Consumer is not ready")
         return
@@ -213,117 +206,22 @@ class SubscriptionConsumer:
             await self.finalize()
 
     async def initialize(self) -> None:
-        if self._app.auto_commit:
-            self._auto_commit_task = asyncio.create_task(self._auto_commit())
+        ...
 
     async def finalize(self) -> None:
-        if (
-            self._app.auto_commit
-            and self._auto_commit_task is not None
-            and not self._auto_commit_task.done()
-        ):
-            self._auto_commit_task.cancel()
+        ...
 
-    async def _auto_commit(self) -> None:
-        default_to = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
-        assignment = None
-
-        to = default_to
-        while True:
-            try:
-                await asyncio.sleep(to)
-
-                try:
-                    assignment = await asyncio.shield(self._ensure_subscription(assignment))
-                    to = await asyncio.shield(self.commit()) or default_to
-                except asyncio.CancelledError:
-                    # cancelled inside tasks should not cause this task to exit
-                    ...
-            except (RuntimeError, asyncio.CancelledError):
-                logger.info("Exiting auto commit task from runtime or cancellation")
-                return
-            except Exception:
-                logger.exception("Unhandled error in auto commit routine, retrying", exc_info=True)
-
-    async def _ensure_subscription(self, assignment: Any) -> Any:
-        # pulled from auto commit handler in aiokafka that
-        # still commits on error
-
-        subscription = self.consumer._subscription.subscription
-        if subscription is not None and not subscription.active:
-            # The subscription can change few times, so we can not rely on
-            # flags or topic lists. For example if user changes
-            # subscription from X to Y and back to X we still need to
-            # rejoin group.
-            self.consumer._coordinator.request_rejoin()
-            subscription = self.consumer._subscription.subscription
-        if subscription is None:
-            await asyncio.wait(
-                [self.consumer._subscription.wait_for_subscription()],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            subscription = self.consumer._subscription.subscription
-        assert subscription is not None and subscription.active
-        auto_assigned = self.consumer._subscription.partitions_auto_assigned()
-
-        await self.consumer._coordinator.ensure_coordinator_known()
-        if auto_assigned and self.consumer._coordinator.need_rejoin(subscription):
-            new_assignment = await self.consumer._coordinator.ensure_active_group(
-                subscription, assignment
-            )
-            if new_assignment is None or not new_assignment.active:
-                return assignment
-            else:
-                assignment = new_assignment
-        else:
-            assignment = subscription.assignment
-
-        assert assignment is not None and assignment.active
-        return assignment
-
-    async def commit(self) -> Optional[float]:
+    async def _maybe_commit(self) -> None:
         """
-        Commit current state
+        Commit if we've eclipsed the time to commit next
         """
-        async with self._commit_lock:
-            # it's possible to commit on exit as well
-            # so let's make sure to use lock here
-            return await self._commit()
-
-    async def _commit(self) -> float:
-        now = time.monotonic()
         interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
-        backoff = self._app.kafka_settings.get("retry_backoff_ms", 200) / 1000
-
-        to_commit = self._to_commit
-        try:
-            self._to_commit = {}
-            assignment = self.consumer.assignment()
-            for tp in list(to_commit.keys()):
-                if tp not in assignment:
-                    # clean if we got a new assignment
-                    del to_commit[tp]
-            if len(to_commit) > 0:
-                await self.consumer.commit(to_commit)
-                logging.debug(f"Committed offsets: {to_commit}")
-        except aiokafka.errors.CommitFailedError:
-            # try to commit again but we need to combine
-            # what could now be in the commit from when we started
-            logging.info("Failed to commit offsets, Retrying.")
-            for tp in to_commit.keys():
-                if tp in self._to_commit:
-                    self._to_commit[tp] = max(to_commit[tp], self._to_commit[tp])
-                else:
-                    self._to_commit[tp] = to_commit[tp]
-            return backoff
-        except aiokafka.errors.IllegalStateError:
-            logging.info("Attempt to commit unassigned partition")
-        except Exception:
-            logging.exception("Unhandled exception committed offsets", exc_info=True)
-        return max(0, (now + interval) - time.monotonic())
-
-    def record_commit(self, record: aiokafka.structs.ConsumerRecord) -> None:
-        self._to_commit[TopicPartition(record.topic, record.partition)] = record.offset + 1
+        if time.monotonic() > self._last_commit + interval:
+            try:
+                await self.consumer.commit()
+            except aiokafka.errors.CommitFailedError:
+                logger.warning("Error attempting to commit", exc_info=True)
+            self._last_commit = time.monotonic()
 
     async def _run(self) -> None:
         self._consumer = self._app.consumer_factory(self._subscription.group)
@@ -353,6 +251,7 @@ class SubscriptionConsumer:
                 msg_handler = partial(_pydantic_msg_handler, annotation)  # type: ignore
 
         await self.emit("started", subscription_consumer=self)
+        last_error = False
         try:
             # Consume messages
             async for record in self._consumer:
@@ -414,8 +313,10 @@ class SubscriptionConsumer:
                         partition=record.partition,
                         group_id=self._subscription.group,
                     ).inc()
-                    self.record_commit(record)
+                    last_error = False
+                    await self._maybe_commit()
                 except Exception as err:
+                    last_error = True
                     CONSUMED_MESSAGES.labels(
                         stream_id=record.topic,
                         partition=record.partition,
@@ -423,17 +324,16 @@ class SubscriptionConsumer:
                         group_id=self._subscription.group,
                     ).inc()
                     await retry_policy(record=record, exception=err)
-                    # also commit after successful message retry handling
-                    self.record_commit(record)
-                except aiokafka.errors.ConsumerStoppedError:
-                    # Consumer is closed
-                    pass
+                    # we didn't bubble, so no error here
+                    last_error = False
+                    await self._maybe_commit()
                 finally:
                     context.close()
                     await self.emit("message", record=record)
         finally:
             try:
-                await self.commit()
+                if not last_error:
+                    await self.consumer.commit()
             except Exception:
                 logger.info("Could not commit on shutdown", exc_info=True)
             try:
