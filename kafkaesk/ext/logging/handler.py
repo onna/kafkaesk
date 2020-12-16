@@ -81,7 +81,7 @@ class KafkaeskQueue:
             self._queue = asyncio.Queue(maxsize=self._queue_size)
 
         if self._task is None or self._task.done():
-            self._task = asyncio.get_event_loop().create_task(self._run())
+            self._task = asyncio.create_task(self._run())
 
     def close(self) -> None:
         if self._task is not None and not self._task._loop.is_closed():
@@ -211,7 +211,11 @@ class PydanticKafkaeskHandler(logging.Handler):
 
     def emit(self, record: PydanticLogRecord) -> None:  # type: ignore
         if not self._queue.running:
-            self._queue.start()
+            try:
+                self._queue.start()
+            except RuntimeError:
+                sys.stderr.write("RuntimeError starting kafka logging, ignoring")
+                return
 
         try:
             raw_data = self._format_base_log(record)
