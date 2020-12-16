@@ -229,7 +229,6 @@ class SubscriptionConsumer:
         listener = CustomConsumerRebalanceListener(
             self._consumer, self._app, self._subscription.group
         )
-        self._consumer.subscribe(pattern=pattern, listener=listener)
 
         # Initialize subscribers retry policy
         retry_policy = RetryPolicy(app=self._app, subscription=self._subscription,)
@@ -237,6 +236,8 @@ class SubscriptionConsumer:
 
         with watch_kafka("consumer_start"):
             await self._consumer.start()
+
+        self._consumer.subscribe(pattern=pattern, listener=listener)
 
         msg_handler = _raw_msg_handler
         sig = inspect.signature(self._subscription.func)
