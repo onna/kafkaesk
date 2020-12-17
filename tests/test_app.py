@@ -1,8 +1,10 @@
 from unittest.mock import ANY
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import Mock
 from unittest.mock import patch
 
+import asyncio
 import kafkaesk
 import kafkaesk.exceptions
 import pydantic
@@ -122,3 +124,24 @@ async def test_configure_kafka_consumer():
             fetch_max_wait_ms=100,
             metadata_max_age_ms=100,
         )
+
+
+async def test_publish_propagates_headers():
+    app = kafkaesk.Application(kafka_servers=["foo"])
+
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    producer = AsyncMock()
+    app._get_producer = AsyncMock(return_value=producer)
+    app._topic_mng = MagicMock()
+    app._topic_mng.get_topic_id.return_value = "foobar"
+    app._topic_mng.topic_exists = AsyncMock(return_value=True)
+
+    await app.publish("foobar", Foo(bar="foo"), headers={"foo": b"bar"})
+    producer.send.assert_called_with(
+        "foobar",
+        value=b'{"schema":"Foo:1","data":{"bar":"foo"}}',
+        key=None,
+        headers=[("foo", b"bar")],
+    )
