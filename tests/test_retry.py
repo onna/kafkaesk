@@ -3,6 +3,7 @@ from datetime import datetime
 from kafkaesk import retry
 from unittest.mock import patch
 
+import asyncio
 import kafkaesk
 import pytest
 
@@ -168,7 +169,7 @@ async def test_retry_policy_default_handler(app: kafkaesk.Application) -> None:
     assert isinstance(handler, retry.Raise)
 
 
-async def test_retry_handler(record: ConsumerRecord) -> None:
+async def test_base_retry_handler(record: ConsumerRecord) -> None:
     class NOOPHandler(retry.RetryHandler):
         ...
 
@@ -255,3 +256,30 @@ async def test_forward_handler(record: ConsumerRecord) -> None:
     policy.app.publish.assert_awaited_once()
     assert policy.app.publish.await_args[0][0] == "test_stream"
     assert isinstance(policy.app.publish.await_args[0][1], retry.RetryMessage)
+
+
+async def test_retry_handler(record: ConsumerRecord) -> None:
+    policy = AsyncMock()
+    policy.subscription.func.side_effect = NOOPException()
+
+    exception = NOOPException()
+    retry_history = retry.RetryHistory()
+
+    retry_history.failures.append(
+        retry.FailureInfo(
+            exception=exception.__class__.__name__,
+            handler_key="NOOPException",
+            timestamp=datetime.now(),
+        )
+    )
+
+    handler = retry.Retry(retry_count=3, delay=10, retry_stream="dummy", dead_letter_stream="dls")
+
+    # Initialize handler
+    await handler.initialize(policy)
+    await handler(policy, "NOOPException", retry_history, record, exception)
+    await asyncio.sleep(12)
+    await handler.finalize()
+
+    policy.subscription.func.assert_awaited_once()
+    policy.assert_awaited_once()

@@ -5,7 +5,11 @@ from .metrics import RETRY_POLICY
 from .metrics import RETRY_POLICY_TIME
 from abc import ABC
 from aiokafka.structs import ConsumerRecord
+from asyncio import create_task
+from asyncio import Queue
+from asyncio import sleep
 from datetime import datetime
+from datetime import timedelta
 from pydantic import BaseModel
 from typing import Dict
 from typing import List
@@ -340,3 +344,94 @@ class Forward(RetryHandler):
             exc_info=exception,
         )
         await self._forward_message(policy, retry_history, record, exception, self.stream_id)
+
+
+class Retry(RetryHandler):
+    def __init__(self, *, retry_count: int, delay: int, retry_stream: str, dead_letter_stream: str):
+        self.retry_count = retry_count
+        self.delay = delay
+        self.retry_stream = retry_stream
+        self.dead_letter_stream = dead_letter_stream
+
+        self._retry_queue = Queue()
+        self._consumer_task = None
+
+        super().__init__()
+
+    async def initialize(self, policy: RetryPolicy):
+        self._consumer_task = create_task(self._consumer(policy))
+
+        await super().initialize(policy)
+
+    async def finalize(self):
+        self._consumer_task.cancel()
+        await self._consumer_task
+
+        await super().finalize()
+
+    async def _consumer(self, policy: RetryPolicy):
+        try:
+            while True:
+                retry_message = await self._retry_queue.get()
+
+                # Check timestamp
+                wait_time = (
+                    retry_message.retry_history.failures[-1].timestamp
+                    + timedelta(seconds=self.delay)
+                ) - datetime.now()
+                if wait_time.total_seconds() > 0:
+                    self.logger.debug(
+                        f"{self.__class__.__name__}.consumer waiting {wait_time.total_seconds()} to retry"
+                    )
+                    await sleep(wait_time.total_seconds())
+
+                # TODO: Parse and format inputs for subscription.func()
+                original_record = retry_message.original_record.to_consumer_record()
+
+                # Call consumer
+                try:
+                    self.logger.info(
+                        f"{self.__class__.__name__}.consumer retrying record: {_fmt_record(original_record)}"
+                    )
+                    await policy.subscription.func()
+                except Exception as err:
+                    self.logger.info(
+                        f"{self.__class__.__name__}.consumer retry raised an error: {_fmt_record(original_record)}"
+                    )
+                    await policy(original_record, err, retry_message.retry_history)
+        except asyncio.CancelledError:
+            self.logger.info("Exiting!")
+
+    async def __call__(
+        self,
+        policy: RetryPolicy,
+        handler_key: str,
+        retry_history: RetryHistory,
+        record: ConsumerRecord,
+        exception: Exception,
+    ) -> None:
+        if self.should_retry(handler_key, retry_history):
+            self.logger.info(
+                f"{self.__class__.__name__}: Sending message to retry stream: {_fmt_record(record)}"
+            )
+            await self._retry_queue.put(
+                RetryMessage(
+                    original_record=Record.from_consumer_record(record), retry_history=retry_history
+                )
+            )
+        else:
+            self.logger.error(
+                f"{self.__class__.__name__}: Sending message to DLS {self.dead_letter_stream}, retry count exceded: {_fmt_record(record)}"
+            )
+            self._forward_message(policy, retry_history, record, exception, self.dead_letter_stream)
+
+    def should_retry(self, handler_key: str, retry_history: RetryHistory) -> bool:
+        return (
+            sum(
+                [
+                    1 if failure.handler_key == handler_key else 0
+                    for failure in retry_history.failures
+                ]
+            )
+            <= self.retry_count
+        )
