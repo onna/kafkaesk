@@ -510,12 +510,20 @@ class Application(Router):
             self._replication_factor = replication_factor
 
     async def publish_and_wait(
-        self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
+        self,
+        stream_id: str,
+        data: BaseModel,
+        key: Optional[bytes] = None,
+        headers: Optional[Dict[str, bytes]] = None,
     ) -> aiokafka.structs.ConsumerRecord:
-        return await (await self.publish(stream_id, data, key))
+        return await (await self.publish(stream_id, data, key, headers=headers))
 
     async def publish(
-        self, stream_id: str, data: BaseModel, key: Optional[bytes] = None
+        self,
+        stream_id: str,
+        data: BaseModel,
+        key: Optional[bytes] = None,
+        headers: Optional[Dict[str, bytes]] = None,
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         if not self._initialized:
             async with self.get_lock("_"):
@@ -541,16 +549,23 @@ class Application(Router):
                 )
 
         return await self.raw_publish(
-            stream_id, orjson.dumps({"schema": schema_key, "data": data_}), key
+            stream_id, orjson.dumps({"schema": schema_key, "data": data_}), key, headers=headers
         )
 
     async def raw_publish(
-        self, stream_id: str, data: bytes, key: Optional[bytes] = None
+        self,
+        stream_id: str,
+        data: bytes,
+        key: Optional[bytes] = None,
+        headers: Optional[Dict[str, bytes]] = None,
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         logger.debug(f"Sending kafka msg: {stream_id}")
         producer = await self._get_producer()
         tracer = opentracing.tracer
-        headers: Optional[List[Tuple[str, bytes]]] = None
+
+        if headers is None:
+            headers = {}
+
         if isinstance(tracer.scope_manager, ContextVarsScopeManager):
             # This only makes sense if the context manager is asyncio aware
             if tracer.active_span:
@@ -560,7 +575,7 @@ class Application(Router):
                     format=opentracing.Format.TEXT_MAP,
                     carrier=carrier,
                 )
-                headers = [(k, v.encode()) for k, v in carrier.items()]
+                headers.update({k: v.encode() for k, v in carrier.items()})
 
         if not self.producer_healthy():
             raise ProducerUnhealthyException(self._producer)  # type: ignore
@@ -568,7 +583,9 @@ class Application(Router):
         topic_id = self.topic_mng.get_topic_id(stream_id)
         start_time = time.time()
         with watch_publish(topic_id):
-            fut = await producer.send(topic_id, value=data, key=key, headers=headers,)
+            fut = await producer.send(
+                topic_id, value=data, key=key, headers=[(k, v) for k, v in headers.items()],
+            )
 
         fut.add_done_callback(partial(_published_callback, topic_id, start_time))  # type: ignore
         return fut
