@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import asyncio
 import logging
 
-if TYPE_CHECKING is True:
+if TYPE_CHECKING:  # pragma: no cover
     from .app import Application
     from .app import Subscription
 
@@ -180,7 +180,7 @@ class RetryPolicy:
         return (handler_key, handler)
 
 
-def _fmt_record(record: ConsumerRecord) -> str:
+def format_record(record: ConsumerRecord) -> str:
     val = repr(record)
     if len(val) > 512:
         return val[:512] + "..."
@@ -223,7 +223,7 @@ class RetryHandler(ABC):
         retry_history: RetryHistory,
         record: ConsumerRecord,
         exception: Exception,
-    ) -> None:
+    ) -> None:  # pragma: no cover
         raise NotImplementedError
 
     async def _raise_message(
@@ -235,7 +235,7 @@ class RetryHandler(ABC):
     ) -> None:
         self.logger.critical(
             f"{self.__class__.__name__} handler recieved exception, "
-            f"re-raising exception {_fmt_record(record)}"
+            f"re-raising exception {format_record(record)}"
         )
         RETRY_HANDLER_RAISE.labels(
             stream_id=record.topic,
@@ -275,7 +275,7 @@ class RetryHandler(ABC):
     ) -> None:
         self.logger.info(
             f"{self.__class__.__name__} handler forwarding message "
-            f"to {forward_stream_id}: {_fmt_record(record)}"
+            f"to {forward_stream_id}: {format_record(record)}"
         )
         await policy.app.publish(
             forward_stream_id,
@@ -315,7 +315,7 @@ class Drop(RetryHandler):
         exception: Exception,
     ) -> None:
         self.logger.error(
-            f"{self.__class__.__name__}: Dropping message due to error: {_fmt_record(record)}",
+            f"{self.__class__.__name__}: Dropping message due to error: {format_record(record)}",
             exc_info=exception,
         )
         await self._drop_message(policy, retry_history, record, exception)
@@ -336,7 +336,7 @@ class Forward(RetryHandler):
         exception: Exception,
     ) -> None:
         self.logger.error(
-            f"{self.__class__.__name__}: Forwarding message due to error: {_fmt_record(record)}",
+            f"{self.__class__.__name__}: Forwarding message due to error: {format_record(record)}",
             exc_info=exception,
         )
         await self._forward_message(policy, retry_history, record, exception, self.stream_id)

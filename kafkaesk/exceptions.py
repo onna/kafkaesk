@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 import aiokafka
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from .app import SchemaRegistration
     from .app import SubscriptionConsumer
 else:
@@ -23,17 +23,6 @@ class SchemaConflictException(Exception):
         return f"""<Schema Conflict:
 Existing: {self.existing}
 New: {self.new}
-/>"""
-
-
-class UnregisteredSchemaException(Exception):
-    def __init__(self, model: BaseModel = None):
-        self.model = model
-
-    def __str__(self) -> str:
-        return f"""<UnregisteredSchemaException
-(Attempted to send message for unregistered schema. Did you initialize the application?)
-Model: {self.model}
 />"""
 
 

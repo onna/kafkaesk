@@ -24,7 +24,7 @@ def get_k8s_ns() -> Optional[str]:
     if _K8S_NS == _not_set:
         if os.path.exists(NAMESPACE_FILEPATH):
             with open(NAMESPACE_FILEPATH) as fi:
-                _K8S_NS = fi.read()
+                _K8S_NS = fi.read().strip()
         else:
             _K8S_NS = None
     return _K8S_NS  # type: ignore
@@ -124,14 +124,8 @@ class KafkaeskQueue:
         if not self._app._initialized:
             await self._app.initialize()
 
-        try:
-            await self._app.publish(stream, log_data)
-        except kafkaesk.exceptions.UnregisteredSchemaException:
-            self._print_to_stderr("Log schema is not registered", log_data)
+        await self._app.publish(stream, log_data)
         # TODO: Handle other Kafak errors that may be raised
-
-    def _print_to_stderr(self, error: str, log_data: PydanticLogModel) -> None:
-        sys.stderr.write(f"Error sending log to Kafka: \n{error}\nMessage: {log_data.json()}")
 
     def put_nowait(self, stream: str, log_data: PydanticLogModel) -> None:
         if self._queue is not None:
@@ -173,7 +167,7 @@ class PydanticKafkaeskHandler(logging.Handler):
             record.exc_text = _formatter.formatException(record.exc_info)
             try:
                 record.exc_type = record.exc_info[0].__name__  # type: ignore
-            except (AttributeError, IndexError):
+            except (AttributeError, IndexError):  # pragma: no cover
                 ...
 
         if record.stack_info:
@@ -222,7 +216,7 @@ class PydanticKafkaeskHandler(logging.Handler):
             raw_data.update(self._format_extra_logs(record))
             log_data = PydanticLogModel(**raw_data)
             self._queue.put_nowait(self.stream, log_data)
-        except InvalidLogFormat:
+        except InvalidLogFormat:  # pragma: no cover
             sys.stderr.write("PydanticKafkaeskHandler recieved non-pydantic model")
         except RuntimeError:
             sys.stderr.write("Queue No event loop running to send log to Kafka\n")
@@ -230,7 +224,7 @@ class PydanticKafkaeskHandler(logging.Handler):
             if time.time() - self._last_warning_sent > 30:
                 sys.stderr.write("Queue hit max log queue size, discarding message\n")
                 self._last_warning_sent = time.time()
-        except AttributeError:
+        except AttributeError:  # pragma: no cover
             sys.stderr.write("Queue Error sending Kafkaesk log message\n")
 
     def close(self) -> None:

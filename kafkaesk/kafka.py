@@ -91,13 +91,10 @@ class KafkaTopicManager:
         partitions: int = 7,
         replication_factor: Optional[int] = None,
         retention_ms: Optional[int] = None,
-        cleanup_policy: Optional[str] = None,
     ) -> None:
         topic_configs: Dict[str, Any] = {}
         if retention_ms is not None:
             topic_configs["retention.ms"] = retention_ms
-        if cleanup_policy is not None:
-            topic_configs["cleanup.policy"] = cleanup_policy
         new_topic = kafka.admin.NewTopic(
             topic,
             partitions,
