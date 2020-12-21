@@ -255,7 +255,7 @@ async def test_subscription_creates_retry_policy(app):
 
     policy_mock = Mock(return_value=AsyncMock())
     factory_mock = Mock(return_value=policy_mock)
-    with patch("kafkaesk.app.RetryPolicy", new_callable=factory_mock):
+    with patch("kafkaesk.subscription.RetryPolicy", new_callable=factory_mock):
         async with app:
             fut = asyncio.create_task(app.consume_for(1, seconds=5))
             await asyncio.sleep(0.2)

@@ -124,6 +124,9 @@ class AIOKafkaConsumer:
     def assignment(self) -> Set[TopicPartition]:
         ...
 
+    async def getmany(self, timeout_ms: int) -> Dict[TopicPartition, List[ConsumerRecord]]:
+        ...
+
 
 class ConsumerRebalanceListener:
     async def on_partitions_revoked(self, revoked: List[TopicPartition]) -> None:

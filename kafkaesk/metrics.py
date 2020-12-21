@@ -148,13 +148,11 @@ class watch:
         *,
         counter: Optional[client.Counter] = None,
         histogram: Optional[client.Histogram] = None,
-        error_mappings: Dict[str, Type[Exception]] = None,
         labels: Optional[Dict[str, str]] = None,
     ):
         self.counter = counter
         self.histogram = histogram
         self.labels = labels or {}
-        self.error_mappings = error_mappings or {}
 
     def __enter__(self) -> None:
         self.start = time.time()
@@ -168,21 +166,13 @@ class watch:
         error = NOERROR
         if self.histogram is not None:
             finished = time.time()
-            if len(self.labels) > 0:
-                self.histogram.labels(**self.labels).observe(finished - self.start)
-            else:
-                self.histogram.observe(finished - self.start)
+            self.histogram.labels(**self.labels).observe(finished - self.start)
 
         if self.counter is not None:
             if exc_value is None:
                 error = NOERROR
             else:
-                for error_type, mapped_exc_type in self.error_mappings.items():
-                    if isinstance(exc_value, mapped_exc_type):
-                        error = error_type
-                        break
-                else:
-                    error = ERROR_GENERAL_EXCEPTION
+                error = ERROR_GENERAL_EXCEPTION
             self.counter.labels(error=error, **self.labels).inc()
 
 

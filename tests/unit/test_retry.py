@@ -255,3 +255,11 @@ async def test_forward_handler(record: ConsumerRecord) -> None:
     policy.app.publish.assert_awaited_once()
     assert policy.app.publish.await_args[0][0] == "test_stream"
     assert isinstance(policy.app.publish.await_args[0][1], retry.RetryMessage)
+
+
+def test_format_record(record):
+    assert retry.format_record(record)
+
+    # truncates value
+    record.value = b"X" * 1024
+    assert len(retry.format_record(record)) == 515

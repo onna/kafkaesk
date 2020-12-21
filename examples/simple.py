@@ -1,4 +1,5 @@
 from kafkaesk import Application
+from kafkaesk import run_app
 from pydantic import BaseModel
 
 import asyncio
@@ -17,16 +18,25 @@ class Foobar(BaseModel):
 
 
 @app.subscribe("content.*", group="example_content_group")
-async def messages(data: Foobar):
-    print(f"{data.foo}: {data.bar}")
+async def messages(data: Foobar, record):
+    await asyncio.sleep(0.1)
+    print(f"{data.foo}: {data.bar}: {record}")
 
 
-async def generate_data():
+async def generate_data(app):
+    idx = 0
+    while True:
+        await app.publish("content.foo", Foobar(foo=str(idx), bar="yo"))
+        idx += 1
+        await asyncio.sleep(0.1)
+
+
+async def run():
     app.configure(kafka_servers=["localhost:9092"])
-    async with app:
-        for idx in range(1000):
-            await app.publish("content.foo", Foobar(foo=str(idx), bar="yo"))
+    task = asyncio.create_task(generate_data(app))
+    await run_app(app)
+    # await app.consume_forever()
 
 
 if __name__ == "__main__":
-    asyncio.run(generate_data())
+    asyncio.run(run())

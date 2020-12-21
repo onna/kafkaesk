@@ -1,14 +1,7 @@
-from .exceptions import ConsumerUnhealthyException
 from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
 from .exceptions import StopConsumer
-from .exceptions import UnhandledMessage
 from .kafka import KafkaTopicManager
-from .metrics import CONSUMED_MESSAGE_TIME
-from .metrics import CONSUMED_MESSAGES
-from .metrics import CONSUMER_REBALANCED
-from .metrics import CONSUMER_TOPIC_OFFSET
-from .metrics import MESSAGE_LEAD_TIME
 from .metrics import NOERROR
 from .metrics import PRODUCER_TOPIC_OFFSET
 from .metrics import PUBLISHED_MESSAGES
@@ -16,13 +9,13 @@ from .metrics import PUBLISHED_MESSAGES_TIME
 from .metrics import watch_kafka
 from .metrics import watch_publish
 from .retry import RetryHandler
-from .retry import RetryPolicy
+from .subscription import Subscription
+from .subscription import SubscriptionConsumer
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
 from opentracing.scope_managers.contextvars import ContextVarsScopeManager
 from pydantic import BaseModel
-from pydantic import ValidationError
 from typing import Any
 from typing import Awaitable
 from typing import Callable
@@ -37,8 +30,6 @@ import aiokafka.errors
 import aiokafka.structs
 import argparse
 import asyncio
-import fnmatch
-import inspect
 import logging
 import opentracing
 import orjson
@@ -47,24 +38,6 @@ import signal
 import time
 
 logger = logging.getLogger("kafkaesk")
-
-
-class Subscription:
-    def __init__(
-        self,
-        stream_id: str,
-        func: Callable,
-        group: str,
-        *,
-        retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
-    ):
-        self.stream_id = stream_id
-        self.func = func
-        self.group = group
-        self.retry_handlers = retry_handlers
-
-    def __repr__(self) -> str:
-        return f"<Subscription stream: {self.stream_id} >"
 
 
 class SchemaRegistration:
@@ -83,49 +56,25 @@ class SchemaRegistration:
         self.streams = streams
 
     def __repr__(self) -> str:
-        return f"<SchemaRegistration id: {self.id}, version: {self.version} >"
+        return f"<SchemaRegistration {self.id}, version: {self.version} >"
 
 
-def _pydantic_msg_handler(
-    model: Type[BaseModel], record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
-) -> BaseModel:
-    try:
-        return model.parse_obj(data["data"])
-    except ValidationError:
-        # log the execption so we can see what fields failed
-        logger.warning(f"Error parsing pydantic model:{model} {record}", exc_info=True)
-        raise UnhandledMessage(f"Error parsing data: {model}")
-
-
-def _raw_msg_handler(
-    record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
-) -> Dict[str, Any]:
-    return data
-
-
-def _bytes_msg_handler(record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]) -> bytes:
-    return record.value
-
-
-def _record_msg_handler(
-    record: aiokafka.structs.ConsumerRecord, data: Dict[str, Any]
-) -> aiokafka.structs.ConsumerRecord:
-    return record
-
-
-def _published_callback(topic: str, start_time: float, fut: Future) -> None:
+def published_callback(topic: str, start_time: float, fut: Future) -> None:
     # Record the metrics
     finish_time = time.time()
     exception = fut.exception()
     if exception:
         error = str(exception.__class__.__name__)
+        PUBLISHED_MESSAGES.labels(stream_id=topic, partition=-1, error=error).inc()
     else:
-        error = NOERROR
-
-    metadata = fut.result()
-    PUBLISHED_MESSAGES.labels(stream_id=topic, partition=metadata.partition, error=error).inc()
-    PRODUCER_TOPIC_OFFSET.labels(stream_id=topic, partition=metadata.partition).set(metadata.offset)
-    PUBLISHED_MESSAGES_TIME.labels(stream_id=topic).observe(finish_time - start_time)
+        metadata = fut.result()
+        PUBLISHED_MESSAGES.labels(
+            stream_id=topic, partition=metadata.partition, error=NOERROR
+        ).inc()
+        PRODUCER_TOPIC_OFFSET.labels(stream_id=topic, partition=metadata.partition).set(
+            metadata.offset
+        )
+        PUBLISHED_MESSAGES_TIME.labels(stream_id=topic).observe(finish_time - start_time)
 
 
 _aiokafka_consumer_settings = (
@@ -152,199 +101,6 @@ _aiokafka_producer_settings = (
     "send_backoff_ms",
     "retry_backoff_ms",
 )
-
-
-class SubscriptionConsumer:
-    _consumer: Optional[aiokafka.AIOKafkaConsumer] = None
-
-    def __init__(
-        self,
-        app: "Application",
-        subscription: Subscription,
-        event_handlers: Optional[Dict[str, List[Callable]]] = None,
-    ):
-        self._app = app
-        self._subscription = subscription
-        self._event_handlers = event_handlers or {}
-        self._last_commit = time.monotonic()
-
-    @property
-    def consumer(self) -> aiokafka.AIOKafkaConsumer:
-        if self._consumer is None:
-            raise RuntimeError("Consumer not initialized")
-        return self._consumer
-
-    async def healthy(self) -> None:
-        if self._consumer is None:
-            return
-        if not await self._consumer._client.ready(self._consumer._coordinator.coordinator_id):
-            raise ConsumerUnhealthyException(self, "Consumer is not ready")
-        return
-
-    async def emit(self, name: str, *args: Any, **kwargs: Any) -> None:
-        for func in self._event_handlers.get(name, []):
-            try:
-                await func(*args, **kwargs)
-            except StopConsumer:
-                raise
-            except Exception:
-                logger.warning(f"Error emitting event: {name}: {func}", exc_info=True)
-
-    async def __call__(self) -> None:
-        await self.initialize()
-        try:
-            while True:
-                try:
-                    await self._run()
-                except aiokafka.errors.KafkaConnectionError:
-                    logger.warning("Connection error, retrying", exc_info=True)
-                    await asyncio.sleep(0.5)
-        except (RuntimeError, asyncio.CancelledError, StopConsumer):
-            logger.debug("Consumer stopped, exiting")
-        finally:
-            await self.finalize()
-
-    async def initialize(self) -> None:
-        ...
-
-    async def finalize(self) -> None:
-        ...
-
-    async def _maybe_commit(self) -> None:
-        """
-        Commit if we've eclipsed the time to commit next
-        """
-        interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
-        if time.monotonic() > self._last_commit + interval:
-            try:
-                await self.consumer.commit()
-            except aiokafka.errors.CommitFailedError:
-                logger.warning("Error attempting to commit", exc_info=True)
-            self._last_commit = time.monotonic()
-
-    async def _run(self) -> None:
-        self._consumer = self._app.consumer_factory(self._subscription.group)
-        pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
-        listener = CustomConsumerRebalanceListener(
-            self._consumer, self._app, self._subscription.group
-        )
-
-        # Initialize subscribers retry policy
-        retry_policy = RetryPolicy(app=self._app, subscription=self._subscription,)
-        await retry_policy.initialize()
-
-        with watch_kafka("consumer_start"):
-            await self._consumer.start()
-
-        self._consumer.subscribe(pattern=pattern, listener=listener)
-
-        msg_handler = _raw_msg_handler
-        sig = inspect.signature(self._subscription.func)
-        param_name = [k for k in sig.parameters.keys()][0]
-        annotation = sig.parameters[param_name].annotation
-        if annotation and annotation != sig.empty:
-            if annotation == bytes:
-                msg_handler = _bytes_msg_handler  # type: ignore
-            elif annotation == aiokafka.structs.ConsumerRecord:
-                msg_handler = _record_msg_handler  # type: ignore
-            else:
-                msg_handler = partial(_pydantic_msg_handler, annotation)  # type: ignore
-
-        await self.emit("started", subscription_consumer=self)
-        last_error = False
-        try:
-            # Consume messages
-            async for record in self._consumer:
-                tracer = opentracing.tracer
-                headers = {x[0]: x[1].decode() for x in record.headers or []}
-                parent = tracer.extract(opentracing.Format.TEXT_MAP, headers)
-                context = tracer.start_active_span(
-                    record.topic,
-                    tags={
-                        "message_bus.destination": record.topic,
-                        "message_bus.partition": record.partition,
-                        "message_bus.group_id": self._subscription.group,
-                    },
-                    references=[opentracing.follows_from(parent)],
-                )
-                CONSUMER_TOPIC_OFFSET.labels(
-                    group_id=self._subscription.group,
-                    stream_id=record.topic,
-                    partition=record.partition,
-                ).set(record.offset)
-                # Calculate the time since the message is send until is successfully consumed
-                lead_time = time.time() - record.timestamp / 1000  # type: ignore
-                MESSAGE_LEAD_TIME.labels(
-                    stream_id=record.topic,
-                    partition=record.partition,
-                    group_id=self._subscription.group,
-                ).observe(lead_time)
-
-                try:
-                    logger.debug(f"Handling msg: {record}")
-                    msg_data = orjson.loads(record.value)
-                    it = iter(sig.parameters.items())
-                    name, _ = next(it)
-                    kwargs: Dict[str, Any] = {name: msg_handler(record, msg_data)}
-
-                    for key, param in it:
-                        if key == "schema":
-                            kwargs["schema"] = msg_data["schema"]
-                        elif key == "record":
-                            kwargs["record"] = record
-                        elif key == "app":
-                            kwargs["app"] = self._app
-                        elif key == "subscriber":
-                            kwargs["subscriber"] = self
-                        elif issubclass(param.annotation, opentracing.Span):
-                            kwargs[key] = context.span
-
-                    with CONSUMED_MESSAGE_TIME.labels(
-                        stream_id=record.topic,
-                        partition=record.partition,
-                        group_id=self._subscription.group,
-                    ).time():
-                        await self._subscription.func(**kwargs)
-
-                    # No error metric
-                    CONSUMED_MESSAGES.labels(
-                        stream_id=record.topic,
-                        error=NOERROR,
-                        partition=record.partition,
-                        group_id=self._subscription.group,
-                    ).inc()
-                    last_error = False
-                    await self._maybe_commit()
-                except Exception as err:
-                    last_error = True
-                    CONSUMED_MESSAGES.labels(
-                        stream_id=record.topic,
-                        partition=record.partition,
-                        error=err.__class__.__name__,
-                        group_id=self._subscription.group,
-                    ).inc()
-                    await retry_policy(record=record, exception=err)
-                    # we didn't bubble, so no error here
-                    last_error = False
-                    await self._maybe_commit()
-                finally:
-                    context.close()
-                    await self.emit("message", record=record)
-        finally:
-            try:
-                if not last_error:
-                    await self.consumer.commit()
-            except Exception:
-                logger.info("Could not commit on shutdown", exc_info=True)
-            try:
-                # kill retry policy now
-                await retry_policy.finalize()
-            except Exception:
-                logger.info("Cound not properly stop retry policy", exc_info=True)
-            try:
-                await self._consumer.stop()
-            except Exception:
-                logger.warning("Could not properly stop consumer", exc_info=True)
 
 
 class Router:
@@ -586,7 +342,7 @@ class Application(Router):
                 topic_id, value=data, key=key, headers=[(k, v) for k, v in headers.items()],
             )
 
-        fut.add_done_callback(partial(_published_callback, topic_id, start_time))  # type: ignore
+        fut.add_done_callback(partial(published_callback, topic_id, start_time))  # type: ignore
         return fut
 
     async def flush(self) -> None:
@@ -654,22 +410,13 @@ class Application(Router):
     async def finalize(self) -> None:
         await self._call_event_handlers("finalize")
 
+        await self.stop()
+
         if self._producer is not None:
             with watch_kafka("producer_flush"):
                 await self._producer.flush()
             with watch_kafka("producer_stop"):
                 await self._producer.stop()
-
-        if self._subscription_consumers_tasks:
-            for task in self._subscription_consumers_tasks:
-                if not task.done():
-                    task.cancel()
-
-            for task in self._subscription_consumers_tasks:
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    ...
 
         if self._topic_mng is not None:
             await self._topic_mng.finalize()
@@ -703,24 +450,20 @@ class Application(Router):
             )
             self._subscription_consumers.append(consumer)
 
-        try:
-            futures = [asyncio.create_task(c()) for c in self._subscription_consumers]
-            future = asyncio.gather(*futures)
-            if seconds is not None:
-                future = asyncio.wait_for(future, seconds)
+        done, pending = await asyncio.wait(
+            [asyncio.create_task(c()) for c in self._subscription_consumers], timeout=seconds
+        )
+        await self.stop()
 
-            try:
-                await future
-            except asyncio.TimeoutError:
-                ...
+        # re-raise any errors so we can validate during tests
+        for task in done | pending:
+            exc = task.exception()
+            if exc is not None:
+                raise exc
 
-        finally:
-            for fut in futures:
-                if not fut.done():
-                    fut.cancel()
         return consumed
 
-    async def consume_forever(self) -> None:
+    def consume_forever(self) -> Awaitable:
         self._subscription_consumers = []
         self._subscription_consumers_tasks = []
 
@@ -728,13 +471,27 @@ class Application(Router):
             consumer = SubscriptionConsumer(self, subscription)
             self._subscription_consumers.append(consumer)
 
-        try:
-            self._subscription_consumers_tasks = [
-                asyncio.create_task(c()) for c in self._subscription_consumers
-            ]
-            await asyncio.gather(*self._subscription_consumers_tasks)
-        finally:
+        self._subscription_consumers_tasks = [
+            asyncio.create_task(c()) for c in self._subscription_consumers
+        ]
+        return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.ALL_COMPLETED)
+
+    async def stop(self) -> None:
+        async with self.get_lock("_"):
+            # do not allow stop calls at same time
+
+            if len(self._subscription_consumers) == 0:
+                return
+
+            _, pending = await asyncio.wait(
+                [c.stop() for c in self._subscription_consumers if c], timeout=5
+            )
+            for task in pending:
+                # stop tasks that didn't finish
+                task.cancel()
+
             for task in self._subscription_consumers_tasks:
+                # make sure everything is done
                 if not task.done():
                     task.cancel()
 
@@ -745,40 +502,6 @@ class Application(Router):
                     ...
 
 
-class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
-    def __init__(self, consumer: aiokafka.AIOKafkaConsumer, app: Application, group_id: str):
-        self.consumer = consumer
-        self.app = app
-        self.group_id = group_id
-
-    async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
-        ...
-
-    async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
-        """This method will be called after partition
-           re-assignment completes and before the consumer
-           starts fetching data again.
-
-        Arguments:
-            assigned {TopicPartition} -- List of topics and partitions assigned
-            to a given consumer.
-        """
-        starting_pos = await self.app.topic_mng.list_consumer_group_offsets(
-            self.group_id, partitions=assigned
-        )
-        logger.debug(f"Partitions assigned: {assigned}")
-
-        for tp in assigned:
-            CONSUMER_REBALANCED.labels(
-                stream_id=tp.topic, partition=tp.partition, group_id=self.group_id,
-            ).inc()
-            if tp not in starting_pos or starting_pos[tp].offset == -1:
-                # detect if we've never consumed from this topic before
-                # decision right now is to go back to beginning
-                # and it's unclear if this is always right decision
-                await self.consumer.seek_to_beginning(tp)
-
-
 cli_parser = argparse.ArgumentParser(description="Run kafkaesk worker.")
 cli_parser.add_argument("app", help="Application object")
 cli_parser.add_argument("--kafka-servers", help="Kafka servers")
@@ -787,10 +510,8 @@ cli_parser.add_argument("--topic-prefix", help="Topic prefix")
 cli_parser.add_argument("--api-version", help="Kafka API Version")
 
 
-def _close_app(app: Application, fut: asyncio.Future) -> None:
-    if not fut.done():
-        logger.debug("Cancelling consumer from signal")
-        fut.cancel()
+def _sig_handler(app: Application) -> None:
+    asyncio.create_task(app.stop())
 
 
 async def run_app(app: Application) -> None:
@@ -798,7 +519,7 @@ async def run_app(app: Application) -> None:
         loop = asyncio.get_event_loop()
         fut = asyncio.create_task(app.consume_forever())
         for signame in {"SIGINT", "SIGTERM"}:
-            loop.add_signal_handler(getattr(signal, signame), partial(_close_app, app, fut))
+            loop.add_signal_handler(getattr(signal, signame), partial(_sig_handler, app))
         await fut
         logger.debug("Exiting consumer")
 
@@ -825,7 +546,7 @@ def run(app: Optional[Application] = None) -> None:
             app.configure(api_version=opts.api_version)
 
     try:
-        logger.debug(f"Running kafkaesk consumer {app}")
+        print(f"Running kafkaesk consumer {app}")
         asyncio.run(run_app(app))
-    except asyncio.CancelledError:
+    except asyncio.CancelledError:  # pragma: no cover
         logger.debug("Closing because task was exited")
