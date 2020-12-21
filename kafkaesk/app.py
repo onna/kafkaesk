@@ -510,7 +510,7 @@ cli_parser.add_argument("--topic-prefix", help="Topic prefix")
 cli_parser.add_argument("--api-version", help="Kafka API Version")
 
 
-def _sig_handler(app):
+def _sig_handler(app: Application) -> None:
     asyncio.create_task(app.stop())
 
 
