@@ -196,7 +196,7 @@ class SubscriptionConsumer:
                     logger.warning("Connection error, retrying", exc_info=True)
                     await asyncio.sleep(0.5)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
-            logger.debug("Consumer stopped, exiting")
+            logger.info("Consumer stopped, exiting", exc_info=True)
         finally:
             await self.finalize()
 
@@ -241,7 +241,7 @@ class SubscriptionConsumer:
             logger.warning("Could not properly stop consumer", exc_info=True)
 
         if self._close_fut is not None:
-            # notify stop handler we're done here
+            # notify any stop handlers we're done here
             self._close_fut.set_result(None)
 
         self._close_fut = None
@@ -267,6 +267,9 @@ class SubscriptionConsumer:
         """
         await self.emit("started", subscription_consumer=self)
         while self._close_fut is None:
+            # only thing, except for an error to stop loop is for a _close_fut to be
+            # created and waited on.
+            # The finalize method will then handle this future
             try:
                 record = await asyncio.wait_for(self.consumer.getone(), timeout=0.5)
             except asyncio.TimeoutError:
