@@ -45,7 +45,7 @@ async def test_many_consumers_rebalancing(kafka, topic_prefix):
         await app.initialize()
         apps.append(app)
 
-    produce = asyncio.create_task(producer(apps[0]))
+    produce = asyncio.create_task(producer(apps[0], TOPIC))
 
     consumer_tasks = []
     for app in apps:
@@ -100,7 +100,7 @@ async def _test_consume_every_message_once_during_rebalance(kafka, topic_prefix)
         consumer_tasks.append(asyncio.create_task(app.consume_forever()))
 
     await asyncio.sleep(1)
-    produce = asyncio.create_task(producer(apps[0]))
+    produce = asyncio.create_task(producer(apps[0], TOPIC))
     await asyncio.sleep(5)
 
     # cycle through each, destroying...
