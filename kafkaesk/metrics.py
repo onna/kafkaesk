@@ -1,4 +1,5 @@
 from typing import Dict
+from prometheus_client.utils import INF
 from typing import Optional
 from typing import Type
 
@@ -74,6 +75,7 @@ MESSAGE_LEAD_TIME = client.Histogram(
     "kafkaesk_message_lead_time",
     "Time that the message has been waiting to be handled by a consumer (in seconds)",
     ["stream_id", "group_id", "partition"],
+    buckets=(0.1, 0.5, 1, 3, 5, 10, 30, 60, 60, 120, 300, INF),
 )
 
 CONSUMER_REBALANCED = client.Counter(
