@@ -125,7 +125,10 @@ class TestSubscriptionConsumer:
         await sub.emit("event", "foo", "bar")
 
     async def test_retries_on_connection_failure(self):
-        sub = SubscriptionConsumer(Application(), Subscription("foo", lambda record: 1, "group"),)
+        sub = SubscriptionConsumer(
+            Application(),
+            Subscription("foo", lambda record: 1, "group"),
+        )
         run_mock = AsyncMock()
         sleep = AsyncMock()
         run_mock.side_effect = [aiokafka.errors.KafkaConnectionError, StopConsumer]
@@ -137,7 +140,10 @@ class TestSubscriptionConsumer:
             assert len(run_mock.mock_calls) == 2
 
     async def test_finalize_handles_exceptions(self):
-        sub = SubscriptionConsumer(Application(), Subscription("foo", lambda record: 1, "group"),)
+        sub = SubscriptionConsumer(
+            Application(),
+            Subscription("foo", lambda record: 1, "group"),
+        )
         consumer = AsyncMock()
         consumer.stop.side_effect = Exception
         consumer.commit.side_effect = Exception
@@ -153,7 +159,10 @@ class TestSubscriptionConsumer:
         retry_policy.finalize.assert_called_once()
 
     async def test_run_exits_when_fut_closed_fut(self):
-        sub = SubscriptionConsumer(Application(), Subscription("foo", lambda record: 1, "group"),)
+        sub = SubscriptionConsumer(
+            Application(),
+            Subscription("foo", lambda record: 1, "group"),
+        )
         consumer = AsyncMock()
         consumer.getmany.return_value = {"": [record_factory() for _ in range(10)]}
         sub._consumer = consumer

@@ -339,7 +339,10 @@ class Application(Router):
         start_time = time.time()
         with watch_publish(topic_id):
             fut = await producer.send(
-                topic_id, value=data, key=key, headers=[(k, v) for k, v in headers.items()],
+                topic_id,
+                value=data,
+                key=key,
+                headers=[(k, v) for k, v in headers.items()],
             )
 
         fut.add_done_callback(partial(published_callback, topic_id, start_time))  # type: ignore

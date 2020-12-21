@@ -211,7 +211,10 @@ class SubscriptionConsumer:
         )
 
         # Initialize subscribers retry policy
-        self._retry_policy = RetryPolicy(app=self._app, subscription=self._subscription,)
+        self._retry_policy = RetryPolicy(
+            app=self._app,
+            subscription=self._subscription,
+        )
         await self.retry_policy.initialize()
 
         self._handler = MessageHandler(self)
@@ -290,12 +293,16 @@ class SubscriptionConsumer:
             references=[opentracing.follows_from(parent)],
         )
         CONSUMER_TOPIC_OFFSET.labels(
-            group_id=self._subscription.group, stream_id=record.topic, partition=record.partition,
+            group_id=self._subscription.group,
+            stream_id=record.topic,
+            partition=record.partition,
         ).set(record.offset)
         # Calculate the time since the message is send until is successfully consumed
         lead_time = time.time() - record.timestamp / 1000  # type: ignore
         MESSAGE_LEAD_TIME.labels(
-            stream_id=record.topic, partition=record.partition, group_id=self._subscription.group,
+            stream_id=record.topic,
+            partition=record.partition,
+            group_id=self._subscription.group,
         ).observe(lead_time)
 
         try:
@@ -371,7 +378,9 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
 
         for tp in assigned:
             CONSUMER_REBALANCED.labels(
-                stream_id=tp.topic, partition=tp.partition, group_id=self.group_id,
+                stream_id=tp.topic,
+                partition=tp.partition,
+                group_id=self.group_id,
             ).inc()
             if tp not in starting_pos or starting_pos[tp].offset == -1:
                 # detect if we've never consumed from this topic before

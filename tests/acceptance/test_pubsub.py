@@ -383,7 +383,8 @@ async def test_publish_unregistered_schema(app):
         await app.consume_for(2, seconds=5)
 
     probe.assert_has_calls(
-        [call(Foo(bar="1")), call(Foo(bar="2"))], any_order=True,
+        [call(Foo(bar="1")), call(Foo(bar="2"))],
+        any_order=True,
     )
 
     # 1 failed + 3 ok
@@ -407,7 +408,8 @@ async def test_raw_publish_data(app):
         await app.consume_for(2, seconds=5)
 
     probe.assert_has_calls(
-        [call(b"1"), call(b"2")], any_order=True,
+        [call(b"1"), call(b"2")],
+        any_order=True,
     )
 
     # 1 failed + 3 ok

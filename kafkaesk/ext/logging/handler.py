@@ -65,7 +65,9 @@ class PydanticStreamHandler(logging.StreamHandler):
 
 class KafkaeskQueue:
     def __init__(
-        self, app: kafkaesk.app.Application, max_queue: int = 10000,
+        self,
+        app: kafkaesk.app.Application,
+        max_queue: int = 10000,
     ):
         self._queue: Optional[asyncio.Queue] = None
         self._queue_size = max_queue
@@ -199,7 +201,14 @@ class PydanticKafkaeskHandler(logging.Handler):
         extra_logs: Dict[str, Any] = {}
 
         for log in getattr(record, "pydantic_data", []):
-            extra_logs.update(log.dict(exclude_none=True, exclude={"_is_log_model",},))
+            extra_logs.update(
+                log.dict(
+                    exclude_none=True,
+                    exclude={
+                        "_is_log_model",
+                    },
+                )
+            )
 
         return extra_logs
 

@@ -82,7 +82,9 @@ class RetryPolicy:
     logger = logging.getLogger("kafkaesk.retry.retry_policy")
 
     def __init__(
-        self, app: "Application", subscription: "Subscription",
+        self,
+        app: "Application",
+        subscription: "Subscription",
     ):
         self.app = app
         self.subscription = subscription
@@ -121,7 +123,9 @@ class RetryPolicy:
         self.logger.debug(f"Handling msg retry: {record} {exception}")
 
         with RETRY_POLICY_TIME.labels(
-            stream_id=record.topic, partition=record.partition, group_id=self.subscription.group,
+            stream_id=record.topic,
+            partition=record.partition,
+            group_id=self.subscription.group,
         ).time():
             handler_key, handler = self._get_handler(exception)
 
