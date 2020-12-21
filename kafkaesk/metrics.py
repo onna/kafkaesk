@@ -1,5 +1,5 @@
-from typing import Dict
 from prometheus_client.utils import INF
+from typing import Dict
 from typing import Optional
 from typing import Type
 
