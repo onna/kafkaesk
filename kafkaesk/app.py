@@ -477,26 +477,29 @@ class Application(Router):
         return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.ALL_COMPLETED)
 
     async def stop(self) -> None:
-        if len(self._subscription_consumers) == 0:
-            return
+        async with self.get_lock("_"):
+            # do not allow stop calls at same time
 
-        _, pending = await asyncio.wait(
-            [c.stop() for c in self._subscription_consumers if c], timeout=5
-        )
-        for task in pending:
-            # stop tasks that didn't finish
-            task.cancel()
+            if len(self._subscription_consumers) == 0:
+                return
 
-        for task in self._subscription_consumers_tasks:
-            # make sure everything is done
-            if not task.done():
+            _, pending = await asyncio.wait(
+                [c.stop() for c in self._subscription_consumers if c], timeout=5
+            )
+            for task in pending:
+                # stop tasks that didn't finish
                 task.cancel()
 
-        for task in self._subscription_consumers_tasks:
-            try:
-                await task
-            except asyncio.CancelledError:
-                ...
+            for task in self._subscription_consumers_tasks:
+                # make sure everything is done
+                if not task.done():
+                    task.cancel()
+
+            for task in self._subscription_consumers_tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    ...
 
 
 cli_parser = argparse.ArgumentParser(description="Run kafkaesk worker.")
@@ -507,14 +510,16 @@ cli_parser.add_argument("--topic-prefix", help="Topic prefix")
 cli_parser.add_argument("--api-version", help="Kafka API Version")
 
 
+def _sig_handler(app):
+    asyncio.create_task(app.stop())
+
+
 async def run_app(app: Application) -> None:
     async with app:
         loop = asyncio.get_event_loop()
         fut = asyncio.create_task(app.consume_forever())
         for signame in {"SIGINT", "SIGTERM"}:
-            loop.add_signal_handler(
-                getattr(signal, signame), partial(asyncio.create_task, app.stop())
-            )
+            loop.add_signal_handler(getattr(signal, signame), partial(_sig_handler, app))
         await fut
         logger.debug("Exiting consumer")
 
@@ -541,7 +546,7 @@ def run(app: Optional[Application] = None) -> None:
             app.configure(api_version=opts.api_version)
 
     try:
-        logger.debug(f"Running kafkaesk consumer {app}")
+        print(f"Running kafkaesk consumer {app}")
         asyncio.run(run_app(app))
     except asyncio.CancelledError:  # pragma: no cover
         logger.debug("Closing because task was exited")

@@ -17,10 +17,8 @@ async def run_async(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
 def resolve_dotted_name(name: str) -> Any:
     """
     import the provided dotted name
-
     >>> resolve_dotted_name('foo.bar')
     <object bar>
-
     :param name: dotted name
     """
     names = name.split(".")
@@ -28,6 +26,10 @@ def resolve_dotted_name(name: str) -> Any:
     found = __import__(used)
     for n in names:
         used += "." + n
-        found = getattr(found, n)
+        try:
+            found = getattr(found, n)
+        except AttributeError:
+            __import__(used)
+            found = getattr(found, n)
 
     return found

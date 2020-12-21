@@ -1,33 +1,21 @@
+from .produce import Foo
+from .produce import producer
 from kafkaesk.subscription import SubscriptionConsumer
 
 import asyncio
 import kafkaesk
-import pydantic
 import pytest
 
 pytestmark = pytest.mark.asyncio
 
-TOPIC = "foo.bar"
-
-
-class Foo(pydantic.BaseModel):
-    foo: str
-
-
-async def producer(app):
-    while True:
-        try:
-            await app.publish(TOPIC, Foo(foo="bar"))
-            await asyncio.sleep(0.05)
-        except asyncio.CancelledError:
-            return
+GROUP = TOPIC = "test-rebalance"
 
 
 async def test_cancel_getone(app):
 
     app.schema(streams=[TOPIC])(Foo)
 
-    @app.subscribe(TOPIC, group="group")
+    @app.subscribe(TOPIC, group=GROUP)
     async def consumer(ob: Foo, record, app):
         ...
 
@@ -50,7 +38,7 @@ async def test_many_consumers_rebalancing(kafka, topic_prefix):
         app.schema(streams=[TOPIC])(Foo)
         app.id = idx
 
-        @app.subscribe(TOPIC, group="group")
+        @app.subscribe(TOPIC, group=GROUP)
         async def consumer(ob: Foo, record, app):
             ...
 
@@ -100,7 +88,7 @@ async def _test_consume_every_message_once_during_rebalance(kafka, topic_prefix)
         app.schema(streams=[TOPIC])(Foo)
         app.id = idx
 
-        @app.subscribe(TOPIC, group="group")
+        @app.subscribe(TOPIC, group=GROUP)
         async def consumer(ob: Foo, record, app):
             record_msg(record)
 
