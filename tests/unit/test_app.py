@@ -206,6 +206,11 @@ class TestApplication:
         assert app._kafka_api_version == "api_version"
         assert app._replication_factor == "replication_factor"
 
+    async def test_initialize_with_unconfigured_app_raises_exception(self):
+        app = kafkaesk.Application()
+        with pytest.raises(kafkaesk.exceptions.AppNotConfiguredException):
+            await app.initialize()
+
     async def test_publish_propagates_headers(self):
         app = kafkaesk.Application(kafka_servers=["foo"])
 

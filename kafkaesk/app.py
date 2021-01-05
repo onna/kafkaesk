@@ -1,3 +1,4 @@
+from .exceptions import AppNotConfiguredException
 from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
 from .exceptions import StopConsumer
@@ -264,6 +265,10 @@ class Application(Router):
         if replication_factor is not None:
             self._replication_factor = replication_factor
 
+    @property
+    def is_configured(self) -> bool:
+        return bool(self._kafka_servers)
+
     async def publish_and_wait(
         self,
         stream_id: str,
@@ -393,6 +398,9 @@ class Application(Router):
         return self._producer
 
     async def initialize(self) -> None:
+        if not self.is_configured:
+            raise AppNotConfiguredException
+
         await self._call_event_handlers("initialize")
 
         for reg in self._schemas.values():
