@@ -46,3 +46,7 @@ class AutoCommitError(ConsumerUnhealthyException):
 class ProducerUnhealthyException(Exception):
     def __init__(self, producer: aiokafka.AIOKafkaProducer):
         self.producer = producer
+
+
+class AppNotConfiguredException(Exception):
+    ...
