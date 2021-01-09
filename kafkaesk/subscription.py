@@ -156,6 +156,7 @@ class SubscriptionConsumer:
         self._event_handlers = event_handlers or {}
         self._last_commit = time.monotonic()
         self._last_error = False
+        self._needs_commit = False
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -257,12 +258,13 @@ class SubscriptionConsumer:
         Commit if we've eclipsed the time to commit next
         """
         interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
-        if time.monotonic() > self._last_commit + interval:
+        if self._needs_commit and time.monotonic() > self._last_commit + interval:
             try:
                 await self.consumer.commit()
             except aiokafka.errors.CommitFailedError:
                 logger.warning("Error attempting to commit", exc_info=True)
             self._last_commit = time.monotonic()
+            self._needs_commit = False
 
     async def _run(self) -> None:
         """
@@ -324,6 +326,7 @@ class SubscriptionConsumer:
                 group_id=self._subscription.group,
             ).inc()
             self._last_error = False
+            self._needs_commit = True
             await self._maybe_commit()
         except Exception as err:
             self._last_error = True
@@ -336,6 +339,7 @@ class SubscriptionConsumer:
             await self.retry_policy(record=record, exception=err)
             # we didn't bubble, so no error here
             self._last_error = False
+            self._needs_commit = True
             await self._maybe_commit()
         finally:
             context.close()

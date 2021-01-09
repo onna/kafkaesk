@@ -71,6 +71,7 @@ class TestSubscriptionConsumer:
 
     async def test_maybe_commit(self, subscription):
         subscription._consumer = AsyncMock()
+        subscription._needs_commit = True
         subscription._last_commit = -10  # monotonic
         await subscription._maybe_commit()
         subscription.consumer.commit.assert_called_once()
@@ -78,7 +79,7 @@ class TestSubscriptionConsumer:
     async def test_maybe_commit_on_message_timeout(self, subscription):
         subscription._consumer = AsyncMock()
         subscription._consumer.getone = partial(asyncio.sleep, 1)
-        subscription._running = True
+        subscription._running = subscription._needs_commit = True
         subscription._last_commit = -10  # monotonic
         maybe_commit = AsyncMock()
         with patch.object(subscription, "_maybe_commit", maybe_commit):
@@ -90,6 +91,7 @@ class TestSubscriptionConsumer:
         subscription._consumer = AsyncMock()
         subscription._consumer.commit.side_effect = aiokafka.errors.CommitFailedError
         subscription._last_commit = -10  # monotonic
+        subscription._needs_commit = True
         await subscription._maybe_commit()
         subscription.consumer.commit.assert_called_once()
 
