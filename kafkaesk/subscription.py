@@ -276,6 +276,7 @@ class SubscriptionConsumer:
             try:
                 record = await asyncio.wait_for(self.consumer.getone(), timeout=0.5)
             except asyncio.TimeoutError:
+                await self._maybe_commit()
                 continue
             await self._handle_message(record)
 
