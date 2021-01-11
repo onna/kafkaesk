@@ -100,13 +100,13 @@ class TestPydanticStreamHandler:
             foo: str
             bar: str
 
-        logger.info("Test Message %s", "extra", LogModel(foo="X" * 50, bar="Y" * 50))
+        logger.info("Test Message %s", "extra", LogModel(foo="X" * 256, bar="Y" * 256))
 
         message = stream_handler.getvalue()
 
         assert "Test Message extra" in message
-        assert f"foo={'X' * 50}" in message
-        assert f"bar={'Y' * 50}" not in message
+        assert f"foo={'X' * 256}" in message
+        assert f"bar={'Y' * 256}" not in message
 
 
 class TestPydanticKafkaeskHandler:

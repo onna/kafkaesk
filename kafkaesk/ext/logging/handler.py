@@ -55,7 +55,8 @@ class PydanticStreamHandler(logging.StreamHandler):
                 formatted = f"{field_name}={val}"
                 size += len(formatted)
                 formatted_data.append(formatted)
-                if size > 50:
+
+                if size > 256:
                     break
             message += f": {', '.join(formatted_data)}"
             break
