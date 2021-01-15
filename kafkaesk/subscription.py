@@ -171,8 +171,8 @@ class SubscriptionConsumer:
         return self._retry_policy
 
     async def healthy(self) -> None:
-        if self._consumer is None:
-            return
+        if not self._running:
+            raise ConsumerUnhealthyException(self, "Consumer is not running")
         if not await self._consumer._client.ready(self._consumer._coordinator.coordinator_id):
             raise ConsumerUnhealthyException(self, "Consumer is not ready")
         return
