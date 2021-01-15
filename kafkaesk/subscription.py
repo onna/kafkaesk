@@ -173,7 +173,9 @@ class SubscriptionConsumer:
     async def healthy(self) -> None:
         if not self._running:
             raise ConsumerUnhealthyException(self, "Consumer is not running")
-        if not await self._consumer._client.ready(self._consumer._coordinator.coordinator_id):
+        if self._consumer is not None and not await self._consumer._client.ready(
+            self._consumer._coordinator.coordinator_id
+        ):
             raise ConsumerUnhealthyException(self, "Consumer is not ready")
         return
 
