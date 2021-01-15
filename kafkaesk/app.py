@@ -508,7 +508,7 @@ class Application(Router):
 
             for task in self._subscription_consumers_tasks:
                 try:
-                    await task
+                    await asyncio.wait([task])
                 except asyncio.CancelledError:
                     ...
 

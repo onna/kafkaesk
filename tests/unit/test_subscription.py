@@ -95,11 +95,9 @@ class TestSubscriptionConsumer:
         await subscription._maybe_commit()
         subscription.consumer.commit.assert_called_once()
 
-    async def test_healthy_with_no_consumer_set(self, subscription):
-        assert await subscription.healthy() is None
-
     async def test_healthy(self, subscription):
         subscription._consumer = MagicMock()
+        subscription._running = True
         subscription._consumer._coordinator.coordinator_id = "coordinator_id"
         subscription._consumer._client.ready = AsyncMock(return_value=True)
         assert await subscription.healthy() is None
@@ -107,7 +105,13 @@ class TestSubscriptionConsumer:
 
     async def test_unhealthy(self, subscription):
         subscription._consumer = MagicMock()
+        subscription._running = True
         subscription._consumer._client.ready = AsyncMock(return_value=False)
+        with pytest.raises(ConsumerUnhealthyException):
+            assert await subscription.healthy()
+
+        subscription._consumer = MagicMock()
+        subscription._running = False
         with pytest.raises(ConsumerUnhealthyException):
             assert await subscription.healthy()
 
