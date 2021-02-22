@@ -1,4 +1,4 @@
-import kafkaesk.scheduler as scheduler
+from kafkaesk.scheduler import Scheduler, Record
 import asyncio
 
 
@@ -7,17 +7,15 @@ async def f1(timeout=0):
     print(f"hello {timeout}!")
 
 
-
-
-
 async def main():
-    s = scheduler.Scheduler()
+    s = Scheduler()
     await s.start()
-    await s.spawn(None, f1())
-    await s.spawn(None, f1(3))
-    await s.spawn(None, f1(2))
-    await asyncio.sleep(0)
-    await s.grateful_shutdown()
+    await s.spawn(f1(), record=Record(1))
+    await s.spawn(f1(3), record=Record(2))
+    await s.spawn(f1(2), record=Record(3))
+    await asyncio.sleep(1)
+    await s.graceful_shutdown()
+    print(s.get_offset())
 
 
 asyncio.run(main())

@@ -283,14 +283,10 @@ class SubscriptionConsumer:
                     await scheduler.spawn(coro)
 
             # Before asking for a new batch, lets persist the offsets
-
-            # T1 T2 T3 T4
-            # X  X  O  X
-
-
-            finished = xx.get_done()
-            offset = find_offset(finished)
-            await self.consumer.commit({tp: (offset, None)})
+            offset = scheduler.get_offset()
+            for partition, offset in offset.items():
+                if offset is not None:
+                    await self.consumer.commit({partition: (offset, None)})
 
     async def _handle_message(self, record: aiokafka.structs.ConsumerRecord) -> None:
         tracer = opentracing.tracer
