@@ -150,6 +150,7 @@ class SubscriptionConsumer:
         app: Application,
         subscription: Subscription,
         event_handlers: Optional[Dict[str, List[Callable]]] = None,
+        num_workers: int = 1,
     ):
         self._app = app
         self._subscription = subscription
@@ -157,6 +158,7 @@ class SubscriptionConsumer:
         self._last_commit = time.monotonic()
         self._last_error = False
         self._needs_commit = False
+        self._num_workers = num_workers
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -214,10 +216,7 @@ class SubscriptionConsumer:
         )
 
         # Initialize subscribers retry policy
-        self._retry_policy = RetryPolicy(
-            app=self._app,
-            subscription=self._subscription,
-        )
+        self._retry_policy = RetryPolicy(app=self._app, subscription=self._subscription,)
         await self.retry_policy.initialize()
 
         self._handler = MessageHandler(self)
@@ -272,17 +271,26 @@ class SubscriptionConsumer:
         """
         Main entry point to consume messages
         """
+        from kafkaesk.scheduler import Scheduler
+        scheduler = Scheduler()
+
         await self.emit("started", subscription_consumer=self)
         while self._close_fut is None:
-            # only thing, except for an error to stop loop is for a _close_fut to be
-            # created and waited on.
-            # The finalize method will then handle this future
-            try:
-                record = await asyncio.wait_for(self.consumer.getone(), timeout=0.5)
-            except asyncio.TimeoutError:
-                await self._maybe_commit()
-                continue
-            await self._handle_message(record)
+            data = await self.consumer.getmany(timeout_ms=250)
+            for tp, records in data.items():
+                for record in records:
+                    coro = self._handle_message(record)
+                    await scheduler.spawn(coro)
+
+            # Before asking for a new batch, lets persist the offsets
+
+            # T1 T2 T3 T4
+            # X  X  O  X
+
+
+            finished = xx.get_done()
+            offset = find_offset(finished)
+            await self.consumer.commit({tp: (offset, None)})
 
     async def _handle_message(self, record: aiokafka.structs.ConsumerRecord) -> None:
         tracer = opentracing.tracer
@@ -298,16 +306,12 @@ class SubscriptionConsumer:
             references=[opentracing.follows_from(parent)],
         )
         CONSUMER_TOPIC_OFFSET.labels(
-            group_id=self._subscription.group,
-            stream_id=record.topic,
-            partition=record.partition,
+            group_id=self._subscription.group, stream_id=record.topic, partition=record.partition,
         ).set(record.offset)
         # Calculate the time since the message is send until is successfully consumed
         lead_time = time.time() - record.timestamp / 1000  # type: ignore
         MESSAGE_LEAD_TIME.labels(
-            stream_id=record.topic,
-            partition=record.partition,
-            group_id=self._subscription.group,
+            stream_id=record.topic, partition=record.partition, group_id=self._subscription.group,
         ).observe(lead_time)
 
         try:
@@ -385,9 +389,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
 
         for tp in assigned:
             CONSUMER_REBALANCED.labels(
-                stream_id=tp.topic,
-                partition=tp.partition,
-                group_id=self.group_id,
+                stream_id=tp.topic, partition=tp.partition, group_id=self.group_id,
             ).inc()
             if tp not in starting_pos or starting_pos[tp].offset == -1:
                 # detect if we've never consumed from this topic before
