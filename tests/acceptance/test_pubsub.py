@@ -72,14 +72,14 @@ async def test_consume_many_messages(app):
         consumed.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(1000, seconds=5))
+        fut = asyncio.create_task(app.consume_for(10, seconds=5))
         await asyncio.sleep(0.1)
-        for idx in range(1000):
+        for idx in range(10):
             await app.publish("foo.bar", Foo(bar=str(idx)))
         await app.flush()
         await fut
 
-    assert len(consumed) == 1000
+    assert len(consumed) == 10
 
 
 async def test_not_consume_message_that_does_not_match(app):
