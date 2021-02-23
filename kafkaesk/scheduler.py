@@ -1,13 +1,15 @@
-import asyncio
-import queue
-from collections import defaultdict
-from typing import Optional, List
 from aiokafka import ConsumerRecord
 from aiokafka import TopicPartition
+from collections import defaultdict
+from typing import Optional, List, Dict
+from typing import Awaitable
+
+import asyncio
+import queue
 
 
 class Job:
-    def __init__(self, coro, *, record: ConsumerRecord, tp: TopicPartition):
+    def __init__(self, coro: Awaitable, *, record: ConsumerRecord, tp: TopicPartition):
         self.coro = coro
         self.record = record
         self.tp = tp
@@ -15,9 +17,9 @@ class Job:
 
 class Scheduler:
     def __init__(self, workers: int = 10):
-        self._running = defaultdict(queue.PriorityQueue)
+        self._running: Dict = defaultdict(queue.PriorityQueue)
         self._workers = workers
-        self._semaphore: asyncio.Semaphore = None
+        self._semaphore: asyncio.Semaphore = None  # type: ignore
 
     # aenter / aexit
 
@@ -25,22 +27,26 @@ class Scheduler:
         for tp in revoked:
             del self._running[tp]
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         self._semaphore = asyncio.Semaphore(self._workers)
 
     async def spawn(
-        self, coro, record: ConsumerRecord, tp: TopicPartition, timeout=None
-    ):
+        self,
+        coro: Awaitable,
+        record: ConsumerRecord,
+        tp: TopicPartition,
+        timeout: Optional[int] = None,
+    ) -> None:
         await self._semaphore.acquire()
         job = Job(coro=coro, record=record, tp=tp)
         fut = asyncio.create_task(job.coro)
         self._running[tp].put((job.record.offset, fut))
         fut.add_done_callback(self.callback)
 
-    def callback(self, future):
+    def callback(self, future: asyncio.Future) -> None:
         self._semaphore.release()
 
-    def get_offsets(self) -> Optional[int]:
+    def get_offsets(self) -> Dict:
         new_offsets = dict()
         for tp, running_queue in self._running.items():
             try:
@@ -55,14 +61,14 @@ class Scheduler:
                 continue
         return new_offsets
 
-    def raise_if_errors(self):
+    def raise_if_errors(self) -> None:
         for tp, running_queue in self._running.items():
             for _, fut in running_queue.queue:
                 if fut.done():
                     if exception := fut.exception():
                         raise exception
 
-    async def graceful_shutdown(self):
+    async def graceful_shutdown(self) -> None:
         futures = []
         for running_queue in self._running.values():
             for _, fut in running_queue.queue:
@@ -70,7 +76,7 @@ class Scheduler:
         await asyncio.gather(*futures)
         await self.force_shutdown()
 
-    async def force_shutdown(self):
+    async def force_shutdown(self) -> None:
         for running_queue in self._running.values():
             for _, fut in running_queue.queue:
                 fut.cancel()

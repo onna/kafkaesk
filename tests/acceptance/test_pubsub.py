@@ -324,9 +324,6 @@ async def test_subscription_failure(app):
             ]
         )
 
-    # After the first failure consumer hard fails
-    assert len(probe.mock_calls) == 1
-
     # remove wrong consumer
     app._subscriptions = []
 
