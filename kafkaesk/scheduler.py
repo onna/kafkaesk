@@ -1,8 +1,10 @@
 from aiokafka import ConsumerRecord
 from aiokafka import TopicPartition
 from collections import defaultdict
-from typing import Optional, List, Dict
 from typing import Awaitable
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import asyncio
 import queue
