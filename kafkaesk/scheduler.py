@@ -1,7 +1,7 @@
 import asyncio
 import queue
 from collections import defaultdict
-from typing import Optional
+from typing import Optional, List
 from aiokafka import ConsumerRecord
 from aiokafka import TopicPartition
 
@@ -16,12 +16,17 @@ class Job:
 class Scheduler:
     def __init__(self, workers: int = 10):
         self._running = defaultdict(queue.PriorityQueue)
-        self._semaphore = asyncio.Semaphore(workers)
+        self._workers = workers
+        self._semaphore: asyncio.Semaphore = None
 
     # aenter / aexit
 
-    async def start(self):
-        ...
+    def on_partitions_revoked(self, revoked: List[TopicPartition]) -> None:
+        for tp in revoked:
+            del self._running[tp]
+
+    async def initialize(self):
+        self._semaphore = asyncio.Semaphore(self._workers)
 
     async def spawn(
         self, coro, record: ConsumerRecord, tp: TopicPartition, timeout=None
@@ -36,7 +41,6 @@ class Scheduler:
         self._semaphore.release()
 
     def get_offsets(self) -> Optional[int]:
-        # import pdb; pdb.set_trace()
         new_offsets = dict()
         for tp, running_queue in self._running.items():
             try:
@@ -50,6 +54,13 @@ class Scheduler:
             except queue.Empty:
                 continue
         return new_offsets
+
+    def raise_if_errors(self):
+        for tp, running_queue in self._running.items():
+            for _, fut in running_queue.queue:
+                if fut.done():
+                    if exception := fut.exception():
+                        raise exception
 
     async def graceful_shutdown(self):
         futures = []

@@ -20,6 +20,7 @@ from typing import List
 from typing import Optional
 from typing import Type
 from typing import TYPE_CHECKING
+from kafkaesk.scheduler import Scheduler
 
 import aiokafka
 import aiokafka.errors
@@ -159,6 +160,7 @@ class SubscriptionConsumer:
         self._last_error = False
         self._needs_commit = False
         self._num_workers = num_workers
+        self._scheduler = Scheduler()
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -208,11 +210,15 @@ class SubscriptionConsumer:
     async def initialize(self) -> None:
         self._running = True
         self._close_fut = None
+        await self._scheduler.initialize()
 
         self._consumer = self._app.consumer_factory(self._subscription.group)
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
         listener = CustomConsumerRebalanceListener(
-            self._consumer, self._app, self._subscription.group
+            consumer=self._consumer,
+            app=self._app,
+            group_id=self._subscription.group,
+            scheduler=self._scheduler,
         )
 
         # Initialize subscribers retry policy
@@ -271,21 +277,26 @@ class SubscriptionConsumer:
         """
         Main entry point to consume messages
         """
-        from kafkaesk.scheduler import Scheduler
-        scheduler = Scheduler()
 
         await self.emit("started", subscription_consumer=self)
+        last_offsets = dict()  # TODO: this is scheduler responsibility
         while self._close_fut is None:
             data = await self.consumer.getmany(timeout_ms=250)
             for tp, records in data.items():
                 for record in records:
+                    if tp in last_offsets and record.offset <= last_offsets[tp]:
+                        continue
                     handler = self._handle_message(record)
                     coro = asyncio.wait_for(handler, timeout=300)
-                    await scheduler.spawn(coro, record=record, tp=tp)
+                    await self._scheduler.spawn(coro, record=record, tp=tp)
+                    last_offsets[tp] = record.offset
+
+            self._scheduler.raise_if_errors()
 
             # Before asking for a new batch, lets persist the offsets
-            offsets = scheduler.get_offsets()
-            await self.consumer.commit(offsets)
+            offsets = self._scheduler.get_offsets()
+            if offsets:
+                await self.consumer.commit(offsets)
 
     async def _handle_message(self, record: aiokafka.structs.ConsumerRecord) -> None:
         tracer = opentracing.tracer
@@ -360,13 +371,14 @@ class SubscriptionConsumer:
 
 
 class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
-    def __init__(self, consumer: aiokafka.AIOKafkaConsumer, app: Application, group_id: str):
+    def __init__(self, consumer: aiokafka.AIOKafkaConsumer, app: Application, group_id: str, scheduler: Scheduler):
         self.consumer = consumer
         self.app = app
         self.group_id = group_id
+        self.scheduler = scheduler
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
-        ...
+        self.scheduler.on_partitions_revoked(revoked)
 
     async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition

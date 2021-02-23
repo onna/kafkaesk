@@ -444,7 +444,6 @@ class Application(Router):
         await self.finalize()
 
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> int:
-
         consumed = 0
 
         self._subscription_consumers = []
