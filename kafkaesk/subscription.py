@@ -279,14 +279,13 @@ class SubscriptionConsumer:
             data = await self.consumer.getmany(timeout_ms=250)
             for tp, records in data.items():
                 for record in records:
-                    coro = self._handle_message(record)
-                    await scheduler.spawn(coro)
+                    handler = self._handle_message(record)
+                    coro = asyncio.wait_for(handler, timeout=300)
+                    await scheduler.spawn(coro, record=record, tp=tp)
 
             # Before asking for a new batch, lets persist the offsets
-            offset = scheduler.get_offset()
-            for partition, offset in offset.items():
-                if offset is not None:
-                    await self.consumer.commit({partition: (offset, None)})
+            offsets = scheduler.get_offsets()
+            await self.consumer.commit(offsets)
 
     async def _handle_message(self, record: aiokafka.structs.ConsumerRecord) -> None:
         tracer = opentracing.tracer
