@@ -11,6 +11,7 @@ from .metrics import watch_kafka
 from .retry import RetryHandler
 from .retry import RetryPolicy
 from functools import partial
+from kafkaesk.scheduler import Scheduler
 from pydantic import BaseModel
 from pydantic import ValidationError
 from typing import Any
@@ -20,7 +21,6 @@ from typing import List
 from typing import Optional
 from typing import Type
 from typing import TYPE_CHECKING
-from kafkaesk.scheduler import Scheduler
 
 import aiokafka
 import aiokafka.errors
