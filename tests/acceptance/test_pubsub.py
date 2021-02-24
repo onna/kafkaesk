@@ -356,8 +356,8 @@ async def test_subscription_failure(app):
         any_order=True,
     )
 
-    # 1 failed + 3 ok
-    assert len(probe.mock_calls) == 4
+    # 2 failed + 3 ok
+    assert len(probe.mock_calls) == 5
 
 
 async def test_publish_unregistered_schema(app):
