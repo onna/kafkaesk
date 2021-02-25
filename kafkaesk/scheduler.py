@@ -22,7 +22,7 @@ class Scheduler:
         self._running: Dict = defaultdict(queue.PriorityQueue)
         self._workers = workers
         self._semaphore: asyncio.Semaphore = None  # type: ignore
-        self._offsets = dict()
+        self._offsets: Dict[TopicPartition, int] = dict()
 
     def on_partitions_revoked(self, revoked: List[TopicPartition]) -> None:
         for tp in revoked:
