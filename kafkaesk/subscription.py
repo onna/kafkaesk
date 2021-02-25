@@ -155,7 +155,6 @@ class SubscriptionConsumer:
         app: Application,
         subscription: Subscription,
         event_handlers: Optional[Dict[str, List[Callable]]] = None,
-        num_workers: int = 1,
     ):
         self._app = app
         self._subscription = subscription
@@ -163,7 +162,6 @@ class SubscriptionConsumer:
         self._last_commit = time.monotonic()
         self._last_error = False
         self._needs_commit = False
-        self._num_workers = num_workers
         self._scheduler = Scheduler(workers=subscription.concurrency)
 
     @property
