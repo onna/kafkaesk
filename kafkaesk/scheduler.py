@@ -22,8 +22,7 @@ class Scheduler:
         self._running: Dict = defaultdict(queue.PriorityQueue)
         self._workers = workers
         self._semaphore: asyncio.Semaphore = None  # type: ignore
-
-    # aenter / aexit
+        self._offsets = dict()
 
     def on_partitions_revoked(self, revoked: List[TopicPartition]) -> None:
         for tp in revoked:
@@ -55,13 +54,14 @@ class Scheduler:
                 while x := running_queue.get_nowait():
                     offset, fut = x
                     if fut.done():
-                        new_offsets[tp] = offset
+                        new_offsets[tp] = offset + 1
                     else:
                         running_queue.put(x)
                         break
             except queue.Empty:
                 continue
-        return new_offsets
+        self._offsets.update(new_offsets)
+        return self._offsets
 
     def raise_if_errors(self) -> None:
         for tp, running_queue in self._running.items():
