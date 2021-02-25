@@ -137,11 +137,18 @@ class Router:
         stream_id: str,
         group: str,
         *,
+        timeout: int = 500,
+        concurrency: int = 20,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ) -> Callable:
         def inner(func: Callable) -> Callable:
             subscription = Subscription(
-                stream_id, func, group or func.__name__, retry_handlers=retry_handlers
+                stream_id,
+                func,
+                group or func.__name__,
+                retry_handlers=retry_handlers,
+                concurrency=concurrency,
+                timeout=timeout,
             )
             self._subscriptions.append(subscription)
             return func
