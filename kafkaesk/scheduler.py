@@ -26,7 +26,10 @@ class Scheduler:
 
     def on_partitions_revoked(self, revoked: List[TopicPartition]) -> None:
         for tp in revoked:
-            del self._running[tp]
+            try:
+                del self._running[tp]
+            except KeyError:
+                pass
 
     async def initialize(self) -> None:
         self._semaphore = asyncio.Semaphore(self._workers)
