@@ -48,12 +48,16 @@ class Subscription:
         func: Callable,
         group: str,
         *,
+        timeout: int = None,
+        concurrency: int = 10,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ):
         self.stream_id = stream_id
         self.func = func
         self.group = group
         self.retry_handlers = retry_handlers
+        self.timeout = timeout
+        self.concurrency = concurrency
 
     def __repr__(self) -> str:
         return f"<Subscription stream: {self.stream_id} >"
@@ -160,7 +164,7 @@ class SubscriptionConsumer:
         self._last_error = False
         self._needs_commit = False
         self._num_workers = num_workers
-        self._scheduler = Scheduler()
+        self._scheduler = Scheduler(workers=subscription.concurrency)
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -290,7 +294,9 @@ class SubscriptionConsumer:
                     if tp in last_offsets and record.offset <= last_offsets[tp]:
                         continue
                     handler = self._handle_message(record)
-                    coro = asyncio.wait_for(handler, timeout=300)
+
+                    # when param `timeout` is None means no tiemout.
+                    coro = asyncio.wait_for(handler, timeout=self._subscription.timeout)
                     await self._scheduler.spawn(coro, record=record, tp=tp)
                     last_offsets[tp] = record.offset
 
