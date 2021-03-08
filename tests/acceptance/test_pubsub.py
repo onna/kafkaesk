@@ -316,13 +316,12 @@ async def test_subscription_failure(app):
             await app.consume_for(2, seconds=5)
 
         # verify we didn't commit
-        # self.topic_mng.get_topic_id(stream_id)
-        assert not any(
-            [
-                tp.topic == topic_id
-                for tp in (await app.topic_mng.list_consumer_group_offsets(group_id)).keys()
-            ]
-        )
+        offsets = [
+            v
+            for k, v in (await app.topic_mng.list_consumer_group_offsets(group_id)).items()
+            if k.topic == topic_id
+        ]
+        assert offsets == []
 
     # remove wrong consumer
     app._subscriptions = []

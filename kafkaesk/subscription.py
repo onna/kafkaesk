@@ -161,6 +161,7 @@ class SubscriptionConsumer:
         self._last_commit = time.monotonic()
         self._last_error = False
         self._needs_commit = False
+        self._state: Dict[asyncio.Future, aiokafka.ConsumerRecord] = dict()
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -220,6 +221,7 @@ class SubscriptionConsumer:
             consumer=self._consumer,
             app=self._app,
             group_id=self._subscription.group,
+            state=self._state,
         )
 
         # Initialize subscribers retry policy
@@ -237,7 +239,6 @@ class SubscriptionConsumer:
             await self._consumer.start()
 
     async def finalize(self) -> None:
-
         try:
             if not self._last_error:
                 await self.consumer.commit()
@@ -300,35 +301,37 @@ class SubscriptionConsumer:
         """
         await self.emit("started", subscription_consumer=self)
         while self._close_fut is None:
-            state: Dict[asyncio.Future, aiokafka.ConsumerRecord] = dict()
             data = await self.consumer.getmany(
-                max_records=self._subscription.concurrency, timeout_ms=5000
+                max_records=self._subscription.concurrency, timeout_ms=500
             )
             if data:
                 for tp, records in data.items():
                     for record in records:
                         handler = self._handle_message(record, commit=False)
-                        # when param `timeout` is None means no tiemout.
                         fut = asyncio.create_task(handler)
-                        state[fut] = record
+                        self._state[fut] = record
+
                 # Wait and check for errors
                 done, pending = await asyncio.wait(
-                    state.keys(),
+                    self._state.keys(),
                     timeout=self._subscription.timeout,
                     return_when=asyncio.FIRST_EXCEPTION,
                 )
 
                 for timeout_task in pending:
-                    await self.publish_to_slow_topic(state[timeout_task])
+                    await self.publish_to_slow_topic(self._state[timeout_task])
 
                 for done_task in done:
                     # If something failed we want to hard fail and bring down the consumer
                     exc = done_task.exception()
-                    if exc:
+                    if isinstance(exc, asyncio.CancelledError):
+                        # Rebalance, we cancel the whole batch and let it reprocess
+                        break
+                    elif exc:
                         raise exc
 
-            # Before asking for a new batch, lets persist the offsets
-            await self.consumer.commit()
+                # Before asking for a new batch, lets persist the offsets
+                await self.consumer.commit()
 
     async def publish_to_slow_topic(self, record: aiokafka.structs.ConsumerRecord) -> None:
         pass
@@ -419,13 +422,21 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
         consumer: aiokafka.AIOKafkaConsumer,
         app: Application,
         group_id: str,
+        state: Dict[asyncio.Future, aiokafka.ConsumerRecord] = dict(),
     ):
         self.consumer = consumer
         self.app = app
         self.group_id = group_id
+        self.state = state
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
-        pass
+        # Stop all pending worker task
+        for task in self.state.keys():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition
