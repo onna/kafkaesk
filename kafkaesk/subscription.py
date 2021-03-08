@@ -282,6 +282,7 @@ class SubscriptionConsumer:
     async def _run_sequential(self) -> None:
         """
         Main entry point to consume messages
+        Note: to be replaced by concurrent consumers once is fully tested!
         """
         await self.emit("started", subscription_consumer=self)
         while self._close_fut is None:
