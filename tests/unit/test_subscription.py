@@ -145,14 +145,16 @@ class TestSubscriptionConsumer:
     async def test_retries_on_connection_failure(self):
         sub = SubscriptionConsumer(
             Application(),
-            Subscription("foo", lambda record: 1, "group"),
+            Subscription("foo", lambda record: 1, "group", concurrency=10),
         )
         run_mock = AsyncMock()
         sleep = AsyncMock()
         run_mock.side_effect = [aiokafka.errors.KafkaConnectionError, StopConsumer]
         with patch.object(sub, "initialize", AsyncMock()), patch.object(
             sub, "finalize", AsyncMock()
-        ), patch.object(sub, "_run", run_mock), patch("kafkaesk.subscription.asyncio.sleep", sleep):
+        ), patch.object(sub, "_run_concurrent", run_mock), patch(
+            "kafkaesk.subscription.asyncio.sleep", sleep
+        ):
             await sub()
             sleep.assert_called_once()
             assert len(run_mock.mock_calls) == 2
@@ -190,7 +192,7 @@ class TestSubscriptionConsumer:
             await asyncio.sleep(0.03)
 
         with patch.object(sub, "_handle_message", _handle_message):
-            task = asyncio.create_task(sub._run())
+            task = asyncio.create_task(sub._run_concurrent())
             await asyncio.sleep(0.01)
             stop_task = asyncio.create_task(sub.stop())
             await asyncio.sleep(0.01)

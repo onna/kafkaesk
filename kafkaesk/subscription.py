@@ -11,7 +11,6 @@ from .metrics import watch_kafka
 from .retry import RetryHandler
 from .retry import RetryPolicy
 from functools import partial
-from kafkaesk.scheduler import Scheduler
 from pydantic import BaseModel
 from pydantic import ValidationError
 from typing import Any
@@ -49,7 +48,7 @@ class Subscription:
         group: str,
         *,
         timeout: int = None,
-        concurrency: int = 10,
+        concurrency: int = None,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ):
         self.stream_id = stream_id
@@ -162,7 +161,6 @@ class SubscriptionConsumer:
         self._last_commit = time.monotonic()
         self._last_error = False
         self._needs_commit = False
-        self._scheduler = Scheduler(workers=subscription.concurrency)
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -200,7 +198,10 @@ class SubscriptionConsumer:
             while self._close_fut is None:
                 # if connection error, try reconnecting
                 try:
-                    await self._run()
+                    if self._subscription.concurrency:
+                        await self._run_concurrent()
+                    else:
+                        await self._run_sequential()
                 except aiokafka.errors.KafkaConnectionError:
                     logger.warning("Connection error, retrying", exc_info=True)
                     await asyncio.sleep(0.5)
@@ -212,7 +213,6 @@ class SubscriptionConsumer:
     async def initialize(self) -> None:
         self._running = True
         self._close_fut = None
-        await self._scheduler.initialize()
 
         self._consumer = self._app.consumer_factory(self._subscription.group)
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
@@ -220,7 +220,6 @@ class SubscriptionConsumer:
             consumer=self._consumer,
             app=self._app,
             group_id=self._subscription.group,
-            scheduler=self._scheduler,
         )
 
         # Initialize subscribers retry policy
@@ -279,34 +278,64 @@ class SubscriptionConsumer:
             self._last_commit = time.monotonic()
             self._needs_commit = False
 
-    async def _run(self) -> None:
+    async def _run_sequential(self) -> None:
         """
         Main entry point to consume messages
         """
-
         await self.emit("started", subscription_consumer=self)
-        last_offsets: Dict = dict()  # TODO: this is scheduler responsibility
         while self._close_fut is None:
-            data = await self.consumer.getmany(timeout_ms=250)
-            for tp, records in data.items():
-                for record in records:
-                    if tp in last_offsets and record.offset <= last_offsets[tp]:
-                        continue
-                    handler = self._handle_message(record)
+            # only thing, except for an error to stop loop is for a _close_fut to be
+            # created and waited on.
+            # The finalize method will then handle this future
+            try:
+                record = await asyncio.wait_for(self.consumer.getone(), timeout=0.5)
+            except asyncio.TimeoutError:
+                await self._maybe_commit()
+                continue
+            await self._handle_message(record)
 
-                    # when param `timeout` is None means no tiemout.
-                    coro = asyncio.wait_for(handler, timeout=self._subscription.timeout)
-                    await self._scheduler.spawn(coro, record=record, tp=tp)
-                    last_offsets[tp] = record.offset
+    async def _run_concurrent(self) -> None:
+        """
+        Main entry point to consume messages
+        """
+        await self.emit("started", subscription_consumer=self)
+        while self._close_fut is None:
+            state: Dict[asyncio.Future, aiokafka.ConsumerRecord] = dict()
+            data = await self.consumer.getmany(
+                max_records=self._subscription.concurrency, timeout_ms=5000
+            )
+            if data:
+                for tp, records in data.items():
+                    for record in records:
+                        handler = self._handle_message(record, commit=False)
+                        # when param `timeout` is None means no tiemout.
+                        fut = asyncio.create_task(handler)
+                        state[fut] = record
+                # Wait and check for errors
+                done, pending = await asyncio.wait(
+                    state.keys(),
+                    timeout=self._subscription.timeout,
+                    return_when=asyncio.FIRST_EXCEPTION,
+                )
 
-            self._scheduler.raise_if_errors()
+                for timeout_task in pending:
+                    await self.publish_to_slow_topic(state[timeout_task])
+
+                for done_task in done:
+                    # If something failed we want to hard fail and bring down the consumer
+                    exc = done_task.exception()
+                    if exc:
+                        raise exc
 
             # Before asking for a new batch, lets persist the offsets
-            offsets = self._scheduler.get_offsets()
-            if offsets:
-                await self.consumer.commit(offsets)
+            await self.consumer.commit()
 
-    async def _handle_message(self, record: aiokafka.structs.ConsumerRecord) -> None:
+    async def publish_to_slow_topic(self, record: aiokafka.structs.ConsumerRecord) -> None:
+        pass
+
+    async def _handle_message(
+        self, record: aiokafka.structs.ConsumerRecord, commit: bool = True
+    ) -> None:
         tracer = opentracing.tracer
         headers = {x[0]: x[1].decode() for x in record.headers or []}
         parent = tracer.extract(opentracing.Format.TEXT_MAP, headers)
@@ -351,7 +380,8 @@ class SubscriptionConsumer:
             ).inc()
             self._last_error = False
             self._needs_commit = True
-            await self._maybe_commit()
+            if commit:
+                await self._maybe_commit()
         except Exception as err:
             self._last_error = True
             CONSUMED_MESSAGES.labels(
@@ -364,7 +394,8 @@ class SubscriptionConsumer:
             # we didn't bubble, so no error here
             self._last_error = False
             self._needs_commit = True
-            await self._maybe_commit()
+            if commit:
+                await self._maybe_commit()
         finally:
             context.close()
             await self.emit("message", record=record)
@@ -388,15 +419,13 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
         consumer: aiokafka.AIOKafkaConsumer,
         app: Application,
         group_id: str,
-        scheduler: Scheduler,
     ):
         self.consumer = consumer
         self.app = app
         self.group_id = group_id
-        self.scheduler = scheduler
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
-        self.scheduler.on_partitions_revoked(revoked)
+        pass
 
     async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition
