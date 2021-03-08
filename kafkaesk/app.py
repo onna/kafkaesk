@@ -138,7 +138,7 @@ class Router:
         group: str,
         *,
         timeout: int = 500,
-        concurrency: int = 20,
+        concurrency: int = 10,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ) -> Callable:
         def inner(func: Callable) -> Callable:

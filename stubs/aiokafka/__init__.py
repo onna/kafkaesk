@@ -124,7 +124,9 @@ class AIOKafkaConsumer:
     def assignment(self) -> Set[TopicPartition]:
         ...
 
-    async def getmany(self, timeout_ms: int) -> Dict[TopicPartition, List[ConsumerRecord]]:
+    async def getmany(
+        self, *partitions: TopicPartition, timeout_ms: int = 0, max_records: int = None
+    ) -> Dict[TopicPartition, List[ConsumerRecord]]:
         ...
 
 
