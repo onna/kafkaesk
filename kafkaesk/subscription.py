@@ -170,6 +170,12 @@ class SubscriptionConsumer:
         return self._consumer
 
     @property
+    def slow_consumer(self) -> aiokafka.AIOKafkaConsumer:
+        if self._slow_consumer is None:
+            raise RuntimeError("Consumer not initialized")
+        return self._slow_consumer
+
+    @property
     def retry_policy(self) -> RetryPolicy:
         if self._retry_policy is None:
             raise RuntimeError("Consumer not initialized")
@@ -211,19 +217,25 @@ class SubscriptionConsumer:
         finally:
             await self.finalize()
 
-    async def initialize(self) -> None:
-        self._running = True
-        self._close_fut = None
-
-        self._consumer = self._app.consumer_factory(self._subscription.group)
-        pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self._subscription.stream_id))
+    async def consumer_factory(self, stream_id: str) -> aiokafka.AIOKafkaConsumer:
+        consumer = self._app.consumer_factory(self._subscription.group)
+        pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(stream_id))
         listener = CustomConsumerRebalanceListener(
-            consumer=self._consumer,
+            consumer=consumer,
             app=self._app,
             group_id=self._subscription.group,
             state=self._state,
         )
+        consumer.subscribe(pattern=pattern, listener=listener)
+        return consumer
 
+    async def initialize(self) -> None:
+        self._running = True
+        self._close_fut = None
+
+        stream_id = self._subscription.stream_id
+        self._consumer = await self.consumer_factory(stream_id)
+        self._slow_consumer = await self.consumer_factory(f"{stream_id}-slow")
         # Initialize subscribers retry policy
         self._retry_policy = RetryPolicy(
             app=self._app,
@@ -233,15 +245,15 @@ class SubscriptionConsumer:
 
         self._handler = MessageHandler(self)
 
-        self._consumer.subscribe(pattern=pattern, listener=listener)
-
         with watch_kafka("consumer_start"):
             await self._consumer.start()
+            await self._slow_consumer.start()
 
     async def finalize(self) -> None:
         try:
             if not self._last_error:
                 await self.consumer.commit()
+                await self.slow_consumer.commit()
         except Exception:
             logger.info("Could not commit on shutdown", exc_info=True)
 
@@ -253,6 +265,7 @@ class SubscriptionConsumer:
 
         try:
             await self.consumer.stop()
+            await self.slow_consumer.stop()
         except Exception:
             logger.warning("Could not properly stop consumer", exc_info=True)
 
@@ -264,6 +277,7 @@ class SubscriptionConsumer:
         self._running = False
         self._last_error = False
         self._consumer = None
+        self._slow_consumer = None
 
     async def _maybe_commit(self) -> None:
         """
@@ -300,20 +314,30 @@ class SubscriptionConsumer:
         # We run both the same consumer but with different timeouts
         # For the regular one we should have latencies below the selected timeout
         # Just a fraction of the records are expected to end in the slow topic.
-        main = self._run_concurrent_inner(timeout=self._subscription.timeout)
-        slow = self._run_concurrent_inner(timeout=None)
+        main = self._run_concurrent_inner(slow=False)
+        slow = self._run_concurrent_inner(slow=True)
         await asyncio.gather(main, slow)
 
-    async def _run_concurrent_inner(self, timeout: int = None) -> None:
+    async def _run_concurrent_inner(self, slow: bool = False) -> None:
         """
         Main entry point to consume messages
         """
+
+        if slow:
+            timeout = None
+            consumer = self.slow_consumer
+        else:
+            timeout = self._subscription.timeout
+            consumer = self.consumer
+
         await self.emit("started", subscription_consumer=self)
         while self._close_fut is None:
-            data = await self.consumer.getmany(
+            data = await consumer.getmany(
                 max_records=self._subscription.concurrency, timeout_ms=500
             )
             if data:
+                if slow:
+                    import pdb; pdb.set_trace()
                 for tp, records in data.items():
                     for record in records:
                         handler = self._handle_message(record, commit=False)
@@ -327,10 +351,14 @@ class SubscriptionConsumer:
                     return_when=asyncio.FIRST_EXCEPTION,
                 )
 
-                if timeout:
+                if not slow:
                     # There is no point to resend to slow topic a task without timeout
                     for timeout_task in pending:
-                        await self.publish_to_slow_topic(self._state[timeout_task])
+                        timeout_task.cancel()
+                        try:
+                            await timeout_task
+                        except asyncio.CancelledError:
+                            await self.publish_to_slow_topic(self._state[timeout_task])
 
                 for done_task in done:
                     # If something failed we want to hard fail and bring down the consumer
@@ -342,7 +370,8 @@ class SubscriptionConsumer:
                         raise exc
 
                 # Before asking for a new batch, lets persist the offsets
-                await self.consumer.commit()
+                await consumer.commit()
+                self._state = dict()
 
     async def publish_to_slow_topic(self, record: aiokafka.structs.ConsumerRecord) -> None:
         stream_id = f"{record.topic}-slow"
