@@ -8,6 +8,7 @@ class ConsumerRecord:
     offset: int
     topic: str
     value: bytes
+    key: bytes
     headers: Optional[List[Tuple[str, bytes]]]
 
 
