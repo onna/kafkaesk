@@ -297,6 +297,14 @@ class SubscriptionConsumer:
             await self._handle_message(record)
 
     async def _run_concurrent(self) -> None:
+        # We run both the same consumer but with different timeouts
+        # For the regular one we should have latencies below the selected timeout
+        # Just a fraction of the records are expected to end in the slow topic.
+        main = self._run_concurrent_inner(timeout=self._subscription.timeout)
+        slow = self._run_concurrent_inner(timeout=None)
+        await asyncio.gather(main, slow)
+
+    async def _run_concurrent_inner(self, timeout: int = None) -> None:
         """
         Main entry point to consume messages
         """
@@ -315,12 +323,14 @@ class SubscriptionConsumer:
                 # Wait and check for errors
                 done, pending = await asyncio.wait(
                     self._state.keys(),
-                    timeout=self._subscription.timeout,
+                    timeout=timeout,
                     return_when=asyncio.FIRST_EXCEPTION,
                 )
 
-                for timeout_task in pending:
-                    await self.publish_to_slow_topic(self._state[timeout_task])
+                if timeout:
+                    # There is no point to resend to slow topic a task without timeout
+                    for timeout_task in pending:
+                        await self.publish_to_slow_topic(self._state[timeout_task])
 
                 for done_task in done:
                     # If something failed we want to hard fail and bring down the consumer
@@ -335,7 +345,15 @@ class SubscriptionConsumer:
                 await self.consumer.commit()
 
     async def publish_to_slow_topic(self, record: aiokafka.structs.ConsumerRecord) -> None:
-        pass
+        stream_id = f"{record.topic}-slow"
+        data = record.value or b""
+        key = record.key or b""
+        fut = await self._app.raw_publish(
+            stream_id=stream_id,
+            data=data,
+            key=key,
+        )
+        await fut
 
     async def _handle_message(
         self, record: aiokafka.structs.ConsumerRecord, commit: bool = True
