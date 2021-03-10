@@ -33,8 +33,8 @@ async def test_health_check_should_fail_with_unhandled(app: Application):
 
     async with app:
         produce = asyncio.create_task(producer(app, TOPIC))
-        asyncio.create_task(app.consume_forever())
-        await asyncio.sleep(2)  # wait for some to produce and then be consumed to cause failure
+        fut = asyncio.create_task(app.consume_forever())
+        await fut
 
         with pytest.raises(ConsumerUnhealthyException):
             await app.health_check()

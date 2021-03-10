@@ -268,8 +268,12 @@ class SubscriptionConsumer:
             logger.info("Cound not properly stop retry policy", exc_info=True)
 
         try:
-            await self.consumer.stop()
-            await self.slow_consumer.stop()
+            await asyncio.wait(
+                [
+                    await self.consumer.stop(),
+                    await self.slow_consumer.stop(),
+                ]
+            )
         except Exception:
             logger.warning("Could not properly stop consumer", exc_info=True)
 
