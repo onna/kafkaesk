@@ -1,4 +1,5 @@
 from aiokafka import ConsumerRecord
+from kafkaesk import Application
 from kafkaesk.exceptions import ConsumerUnhealthyException
 from .produce import producer
 from kafkaesk.exceptions import ProducerUnhealthyException
@@ -25,7 +26,7 @@ pytestmark = pytest.mark.asyncio
 TOPIC = "test-hc"
 
 
-async def test_health_check_should_fail_with_unhandled(app):
+async def test_health_check_should_fail_with_unhandled(app: Application):
     @app.subscribe(TOPIC, group=TOPIC)
     async def consume(data):
         raise Exception("failure!")
