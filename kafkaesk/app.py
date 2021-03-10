@@ -137,7 +137,7 @@ class Router:
         stream_id: str,
         group: str,
         *,
-        timeout: int = 500,
+        timeout_seconds: float = 5,
         concurrency: int = None,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ) -> Callable:
@@ -148,7 +148,7 @@ class Router:
                 group or func.__name__,
                 retry_handlers=retry_handlers,
                 concurrency=concurrency,
-                timeout=timeout,
+                timeout_seconds=timeout_seconds,
             )
             self._subscriptions.append(subscription)
             return func
@@ -422,6 +422,12 @@ class Application(Router):
                             if reg.retention is not None
                             else None,
                         )
+                        await self.topic_mng.create_topic(
+                            f"{topic_id}-slow",
+                            retention_ms=reg.retention * 1000
+                            if reg.retention is not None
+                            else None,
+                        )
 
         self._initialized = True
 
@@ -454,6 +460,7 @@ class Application(Router):
         consumed = 0
 
         self._subscription_consumers = []
+        tasks = []
         for subscription in self._subscriptions:
 
             async def on_message(record: aiokafka.structs.ConsumerRecord) -> None:
@@ -466,10 +473,10 @@ class Application(Router):
                 self, subscription, event_handlers={"message": [on_message]}
             )
             self._subscription_consumers.append(consumer)
+            await consumer.initialize()
+            tasks.append(asyncio.create_task(consumer()))
 
-        done, pending = await asyncio.wait(
-            [asyncio.create_task(c()) for c in self._subscription_consumers], timeout=seconds
-        )
+        done, pending = await asyncio.wait(tasks, timeout=seconds)
         await self.stop()
 
         # re-raise any errors so we can validate during tests
