@@ -287,7 +287,6 @@ class SubscriptionConsumer:
         """
         Commit if we've eclipsed the time to commit next
         """
-        return
         interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
         if self._needs_commit and time.monotonic() > self._last_commit + interval:
             try:
