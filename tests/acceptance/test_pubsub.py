@@ -84,9 +84,7 @@ async def test_consume_many_messages(app):
 
 
 async def test_slow_messages(app: Application):
-    from datetime import datetime
-
-    consumed = [str(datetime.now())]
+    consumed = []
 
     @app.schema("Slow", streams=["foo.bar"])
     class Slow(pydantic.BaseModel):
@@ -96,24 +94,20 @@ async def test_slow_messages(app: Application):
     async def consumer(data: Slow, record: aiokafka.ConsumerRecord):
         try:
             await asyncio.sleep(data.latency)
-            consumed.append((str(datetime.now()), "ok", data.latency, record.topic))
+            consumed.append(("ok", data.latency, record.topic))
         except asyncio.CancelledError:
-            consumed.append((str(datetime.now()), "cancelled", data.latency, record.topic))
+            consumed.append(("cancelled", data.latency, record.topic))
 
     async with app:
         for idx in range(5):
             await app.publish("foo.bar", Slow(latency=idx * 0.01))
             await asyncio.sleep(0.01)
         await app.flush()
-        consumed.append(str(datetime.now()))
 
         fut = asyncio.create_task(app.consume_for(num_messages=8, seconds=2))
         await fut
 
-    import pdb
-
-    pdb.set_trace()
-    assert len(consumed) < 14
+    assert len(consumed) == 14
 
 
 async def test_not_consume_message_that_does_not_match(app):
