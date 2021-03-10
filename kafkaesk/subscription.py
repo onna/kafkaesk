@@ -219,6 +219,7 @@ class SubscriptionConsumer:
             logger.info("Consumer stopped, exiting", exc_info=True)
         except Exception as exc:
             logger.exception("Unmanaged consumer error, exiting", exc_info=exc)
+            raise exc
         finally:
             await self.finalize()
 
