@@ -1,4 +1,5 @@
 from aiokafka import ConsumerRecord
+from kafkaesk import Application
 from kafkaesk.exceptions import ProducerUnhealthyException
 from kafkaesk.kafka import KafkaTopicManager
 from kafkaesk.retry import Forward
@@ -82,32 +83,37 @@ async def test_consume_many_messages(app):
     assert len(consumed) == 10
 
 
-async def test_slow_messages(app):
-    consumed = []
+async def test_slow_messages(app: Application):
+    from datetime import datetime
+
+    consumed = [str(datetime.now())]
 
     @app.schema("Slow", streams=["foo.bar"])
     class Slow(pydantic.BaseModel):
         latency: float
 
-    @app.subscribe("foo.bar", group="test_group", concurrency=10, timeout=0.0)
+    @app.subscribe("foo.bar", group="test_group", concurrency=10, timeout_seconds=0.035)
     async def consumer(data: Slow, record: aiokafka.ConsumerRecord):
-        await asyncio.sleep(data.latency)
-        consumed.append((data, record.topic))
+        try:
+            await asyncio.sleep(data.latency)
+            consumed.append((str(datetime.now()), "ok", data.latency, record.topic))
+        except asyncio.CancelledError:
+            consumed.append((str(datetime.now()), "cancelled", data.latency, record.topic))
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(5, seconds=5))
-        for idx in range(1, 10):
-            await app.publish("foo.bar", Slow(latency=idx*0.1))
+        for idx in range(5):
+            await app.publish("foo.bar", Slow(latency=idx * 0.01))
+            await asyncio.sleep(0.01)
         await app.flush()
+        consumed.append(str(datetime.now()))
+
+        fut = asyncio.create_task(app.consume_for(num_messages=8, seconds=2))
         await fut
 
-        fut = asyncio.create_task(app.consume_for(5, seconds=5))
-        await app.flush()
-        await fut
+    import pdb
 
-
-    import pdb; pdb.set_trace()
-    assert len(consumed) < 5
+    pdb.set_trace()
+    assert len(consumed) < 14
 
 
 async def test_not_consume_message_that_does_not_match(app):

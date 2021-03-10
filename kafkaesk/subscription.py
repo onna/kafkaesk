@@ -47,7 +47,7 @@ class Subscription:
         func: Callable,
         group: str,
         *,
-        timeout: int = None,
+        timeout_seconds: float = None,
         concurrency: int = None,
         retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ):
@@ -55,7 +55,7 @@ class Subscription:
         self.func = func
         self.group = group
         self.retry_handlers = retry_handlers
-        self.timeout = timeout
+        self.timeout = timeout_seconds
         self.concurrency = concurrency
 
     def __repr__(self) -> str:
@@ -144,6 +144,7 @@ class MessageHandler:
 
 class SubscriptionConsumer:
     _consumer: Optional[aiokafka.AIOKafkaConsumer] = None
+    _slow_consumer: Optional[aiokafka.AIOKafkaConsumer] = None
     _retry_policy: Optional[RetryPolicy] = None
     _handler: MessageHandler
     _close_fut: Optional[asyncio.Future] = None
@@ -161,7 +162,7 @@ class SubscriptionConsumer:
         self._last_commit = time.monotonic()
         self._last_error = False
         self._needs_commit = False
-        self._state: Dict[asyncio.Future, aiokafka.ConsumerRecord] = dict()
+        self._initialized = False
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -172,7 +173,7 @@ class SubscriptionConsumer:
     @property
     def slow_consumer(self) -> aiokafka.AIOKafkaConsumer:
         if self._slow_consumer is None:
-            raise RuntimeError("Consumer not initialized")
+            raise RuntimeError("Slow consumer not initialized")
         return self._slow_consumer
 
     @property
@@ -200,7 +201,9 @@ class SubscriptionConsumer:
                 logger.warning(f"Error emitting event: {name}: {func}", exc_info=True)
 
     async def __call__(self) -> None:
-        await self.initialize()
+        if not self._initialized:
+            await self.initialize()
+
         try:
             while self._close_fut is None:
                 # if connection error, try reconnecting
@@ -214,17 +217,18 @@ class SubscriptionConsumer:
                     await asyncio.sleep(0.5)
         except (RuntimeError, asyncio.CancelledError, StopConsumer):
             logger.info("Consumer stopped, exiting", exc_info=True)
+        except Exception as exc:
+            logger.exception("Unmanaged consumer error, exiting", exc_info=exc)
         finally:
             await self.finalize()
 
-    async def consumer_factory(self, stream_id: str) -> aiokafka.AIOKafkaConsumer:
+    def consumer_factory(self, stream_id: str) -> aiokafka.AIOKafkaConsumer:
         consumer = self._app.consumer_factory(self._subscription.group)
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(stream_id))
         listener = CustomConsumerRebalanceListener(
             consumer=consumer,
             app=self._app,
             group_id=self._subscription.group,
-            state=self._state,
         )
         consumer.subscribe(pattern=pattern, listener=listener)
         return consumer
@@ -234,8 +238,8 @@ class SubscriptionConsumer:
         self._close_fut = None
 
         stream_id = self._subscription.stream_id
-        self._consumer = await self.consumer_factory(stream_id)
-        self._slow_consumer = await self.consumer_factory(f"{stream_id}-slow")
+        self._consumer = self.consumer_factory(stream_id)
+        self._slow_consumer = self.consumer_factory(f"{stream_id}-slow")
         # Initialize subscribers retry policy
         self._retry_policy = RetryPolicy(
             app=self._app,
@@ -246,8 +250,8 @@ class SubscriptionConsumer:
         self._handler = MessageHandler(self)
 
         with watch_kafka("consumer_start"):
-            await self._consumer.start()
-            await self._slow_consumer.start()
+            await asyncio.wait([self._consumer.start(), self._slow_consumer.start()])
+        self._initialized = True
 
     async def finalize(self) -> None:
         try:
@@ -276,8 +280,8 @@ class SubscriptionConsumer:
         self._close_fut = None
         self._running = False
         self._last_error = False
-        self._consumer = None
         self._slow_consumer = None
+        self._consumer = None
 
     async def _maybe_commit(self) -> None:
         """
@@ -316,6 +320,7 @@ class SubscriptionConsumer:
         # Just a fraction of the records are expected to end in the slow topic.
         main = self._run_concurrent_inner(slow=False)
         slow = self._run_concurrent_inner(slow=True)
+        await self.emit("started", subscription_consumer=self)
         await asyncio.gather(main, slow)
 
     async def _run_concurrent_inner(self, slow: bool = False) -> None:
@@ -330,51 +335,44 @@ class SubscriptionConsumer:
             timeout = self._subscription.timeout
             consumer = self.consumer
 
-        await self.emit("started", subscription_consumer=self)
         while self._close_fut is None:
             data = await consumer.getmany(
                 max_records=self._subscription.concurrency, timeout_ms=500
             )
             if data:
-                if slow:
-                    import pdb; pdb.set_trace()
+                futures: Dict[Any, aiokafka.ConsumerRecord] = dict()
                 for tp, records in data.items():
                     for record in records:
                         handler = self._handle_message(record, commit=False)
                         fut = asyncio.create_task(handler)
-                        self._state[fut] = record
+                        futures[fut] = record
 
                 # Wait and check for errors
                 done, pending = await asyncio.wait(
-                    self._state.keys(),
+                    futures.keys(),
                     timeout=timeout,
                     return_when=asyncio.FIRST_EXCEPTION,
                 )
 
-                if not slow:
-                    # There is no point to resend to slow topic a task without timeout
-                    for timeout_task in pending:
-                        timeout_task.cancel()
-                        try:
-                            await timeout_task
-                        except asyncio.CancelledError:
-                            await self.publish_to_slow_topic(self._state[timeout_task])
-
                 for done_task in done:
                     # If something failed we want to hard fail and bring down the consumer
                     exc = done_task.exception()
-                    if isinstance(exc, asyncio.CancelledError):
-                        # Rebalance, we cancel the whole batch and let it reprocess
-                        break
-                    elif exc:
+                    if exc:
                         raise exc
 
-                # Before asking for a new batch, lets persist the offsets
-                await consumer.commit()
-                self._state = dict()
+                # There is no point to resend to slow topic a task without timeout
+                if not slow:
+                    for timeout_task in pending:
+                        # Do not block cancel as fast as possible!!
+                        timeout_task.cancel()
+                        # And now send the record to the slow topic
+                        await self.publish_to_slow_topic(futures[timeout_task])
+
+            # Before asking for a new batch, lets persist the offsets
+            await consumer.commit()
 
     async def publish_to_slow_topic(self, record: aiokafka.structs.ConsumerRecord) -> None:
-        stream_id = f"{record.topic}-slow"
+        stream_id = f"{self._subscription.stream_id}-slow"
         data = record.value or b""
         key = record.key or b""
         fut = await self._app.raw_publish(
@@ -470,21 +468,13 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
         consumer: aiokafka.AIOKafkaConsumer,
         app: Application,
         group_id: str,
-        state: Dict[asyncio.Future, aiokafka.ConsumerRecord] = dict(),
     ):
         self.consumer = consumer
         self.app = app
         self.group_id = group_id
-        self.state = state
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
-        # Stop all pending worker task
-        for task in self.state.keys():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        pass
 
     async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition
