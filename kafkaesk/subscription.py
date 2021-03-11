@@ -271,8 +271,8 @@ class SubscriptionConsumer:
         try:
             await asyncio.wait(
                 [
-                    await self.consumer.stop(),
-                    await self.slow_consumer.stop(),
+                    self.consumer.stop(),
+                    self.slow_consumer.stop(),
                 ]
             )
         except Exception:

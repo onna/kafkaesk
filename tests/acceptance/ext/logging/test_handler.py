@@ -110,12 +110,12 @@ class TestPydanticStreamHandler:
 
 
 class TestPydanticKafkaeskHandler:
-    async def test_kafak_handler(self, app, kafakesk_handler, logger, log_consumer):
+    async def test_kafka_handler(self, app, kafakesk_handler, logger, log_consumer):
 
         async with app:
             logger.info("Test Message %s", "extra")
             await app.flush()
-            await app.consume_for(1, seconds=5)
+            await app.consume_for(1, seconds=8)
 
         assert len(log_consumer) == 1
         assert log_consumer[0].message == "Test Message extra"
@@ -128,7 +128,7 @@ class TestPydanticKafkaeskHandler:
         async with app:
             logger.info("Test Message %s", "extra", LogModel(foo="bar"))
             await app.flush()
-            await app.consume_for(1, seconds=5)
+            await app.consume_for(1, seconds=8)
 
         assert len(log_consumer) == 1
         assert log_consumer[0].message == "Test Message extra"
@@ -205,7 +205,7 @@ class TestKafkaeskQueue:
             queue.put_nowait("log.test", PydanticLogModel(foo="bar"))
 
             await app.flush()
-            await app.consume_for(1, seconds=5)
+            await app.consume_for(1, seconds=8)
 
         queue.close()
         await queue._task
@@ -222,7 +222,7 @@ class TestKafkaeskQueue:
             await queue.flush()
 
             await app.flush()
-            await app.consume_for(10, seconds=5)
+            await app.consume_for(10, seconds=8)
 
         assert len(log_consumer) == 10
 
@@ -237,7 +237,7 @@ class TestKafkaeskQueue:
                 queue.put_nowait("log.test", PydanticLogModel(count=i))
 
             await app.flush()
-            await app.consume_for(10, seconds=5)
+            await app.consume_for(10, seconds=8)
 
         assert len(log_consumer) == 10
         assert queue._task.done()

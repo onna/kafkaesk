@@ -110,6 +110,7 @@ async def test_slow_messages(app: Application):
         # Assert here
         assert True
 
+
 async def test_not_consume_message_that_does_not_match(app):
     consumed = []
 
@@ -222,13 +223,11 @@ async def test_subscribe_to_topic_that_does_not_exist(app):
         consumed_records.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(10, seconds=10))
-        await asyncio.sleep(0.5)
-
         for idx in range(10):
             await app.publish("foo.bar", Foo(bar=str(idx)))
 
         await app.flush()
+        fut = asyncio.create_task(app.consume_for(10, seconds=10))
         await fut
 
     assert len(consumed_records) == 10
