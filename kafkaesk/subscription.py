@@ -339,10 +339,21 @@ class SubscriptionConsumer:
             timeout = self._subscription.timeout
             consumer = self.consumer
 
+        last_getmany_time = None
+
         while self._close_fut is None:
             data = await consumer.getmany(
                 max_records=self._subscription.concurrency, timeout_ms=500
             )
+
+            curtime = time.time()
+            if last_getmany_time is not None:
+                logger.info(
+                    f"seconds between consumer.getmany() calls: {curtime - last_getmany_time}"
+                )
+
+            last_getmany_time = curtime
+
             if data:
                 futures: Dict[Any, aiokafka.ConsumerRecord] = dict()
                 for tp, records in data.items():
