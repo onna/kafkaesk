@@ -13,7 +13,7 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
-async def test_record_metric_on_rebalance():
+async def notest_record_metric_on_rebalance():
     with patch("kafkaesk.subscription.CONSUMER_REBALANCED") as rebalance_metric:
         app_mock = AsyncMock()
         app_mock.topic_mng.list_consumer_group_offsets.return_value = {

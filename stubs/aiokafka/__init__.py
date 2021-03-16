@@ -78,6 +78,7 @@ class AIOKafkaConsumer:
     _client: AIOKafkaClient
     _coordinator: GroupCoordinator
     _subscription: Subscription
+    _group_id: Optional[str]
 
     def __init__(
         self,

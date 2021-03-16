@@ -171,6 +171,7 @@ class TestApplication:
                 loop=ANY,
                 group_id="foobar",
                 api_version="auto",
+                auto_offset_reset="earliest",
                 enable_auto_commit=False,
                 max_partition_fetch_bytes=100,
                 fetch_max_wait_ms=100,
