@@ -1,4 +1,5 @@
 from asyncio.events import AbstractEventLoop
+from collections import namedtuple
 from kafka.structs import ConsumerRecord
 from kafka.structs import TopicPartition
 from typing import Any
@@ -137,3 +138,10 @@ class ConsumerRebalanceListener:
 
     async def on_partitions_assigned(self, assigned: List[TopicPartition]) -> None:
         ...
+
+
+OffsetAndMetadata = namedtuple(
+    "OffsetAndMetadata",
+    # TODO add leaderEpoch: OffsetAndMetadata(offset, leaderEpoch, metadata)
+    ["offset", "metadata"],
+)
