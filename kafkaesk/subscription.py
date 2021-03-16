@@ -151,6 +151,7 @@ class SubscriptionConsumer:
     _close_fut: Optional[asyncio.Future] = None
     _running = False
     _futures: Dict[Any, aiokafka.ConsumerRecord]
+    _offsets: Dict[aiokafka.TopicPartition, int]
 
     def __init__(
         self,
@@ -166,6 +167,7 @@ class SubscriptionConsumer:
         self._needs_commit = False
         self._initialized = False
         self._futures = dict()
+        self._offsets = dict()
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -353,6 +355,7 @@ class SubscriptionConsumer:
                         handler = self._handle_message(record, commit=False)
                         fut = asyncio.create_task(handler)
                         self._futures[fut] = record
+                        self._offsets[tp] = record.offset + 1
 
                 # Wait and check for errors
                 done, pending = await asyncio.wait(
@@ -367,7 +370,6 @@ class SubscriptionConsumer:
                     if isinstance(exc, asyncio.CancelledError):
                         continue
                     elif exc:
-                        logger.exception("!!Re-raising first exception", exc_info=exc)
                         raise exc
 
                 # There is no point to resend to slow topic a task without timeout
@@ -380,9 +382,14 @@ class SubscriptionConsumer:
 
             # Before asking for a new batch, lets persist the offsets
             try:
-                await consumer.commit()
+                offsets = {
+                    tp: offset
+                    for tp, offset in self._offsets.items()
+                    if tp in consumer.assignment()
+                }
+                await consumer.commit(offsets)
             except aiokafka.errors.CommitFailedError:
-                logger.exception("Problem commiting offsets!")
+                logger.exception("Problem commiting offsets.")
 
     async def publish_to_slow_topic(self, record: aiokafka.structs.ConsumerRecord) -> None:
         stream_id = f"{self._subscription.stream_id}-slow"
@@ -495,6 +502,9 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
                 tp = aiokafka.TopicPartition(record.topic, record.partition)
                 if tp in revoked:
                     fut.cancel()
+            for tp in revoked:
+                if self.subscription._offsets[tp]:
+                    del self.subscription._offsets[tp]
 
     async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition
