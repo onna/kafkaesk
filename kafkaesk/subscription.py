@@ -340,21 +340,10 @@ class SubscriptionConsumer:
             timeout = self._subscription.timeout
             consumer = self.consumer
 
-        last_getmany_time = None
-
         while self._close_fut is None:
             data = await consumer.getmany(
                 max_records=self._subscription.concurrency, timeout_ms=500
             )
-
-            curtime = time.time()
-            if last_getmany_time is not None:
-                logger.info(
-                    f"seconds between consumer.getmany() calls: {curtime - last_getmany_time}"
-                )
-
-            last_getmany_time = curtime
-
             if data:
                 for tp, records in data.items():
                     for record in records:
@@ -386,7 +375,10 @@ class SubscriptionConsumer:
                         await self.publish_to_slow_topic(self._futures[timeout_task])
 
             # Before asking for a new batch, lets persist the offsets
-            await consumer.commit()
+            try:
+                await consumer.commit()
+            except aiokafka.errors.CommitFailedError:
+                logger.exception("Problem commiting offsets!")
 
     async def publish_to_slow_topic(self, record: aiokafka.structs.ConsumerRecord) -> None:
         stream_id = f"{self._subscription.stream_id}-slow"
@@ -491,6 +483,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
         self.app = subscription._app
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
+        logger.debug(f"Partitions revoked: {revoked}")
         if revoked:
             for fut, record in self.subscription._futures.items():
                 tp = aiokafka.TopicPartition(record.topic, record.partition)
