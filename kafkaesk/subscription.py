@@ -149,6 +149,7 @@ class SubscriptionConsumer:
     _handler: MessageHandler
     _close_fut: Optional[asyncio.Future] = None
     _running = False
+    _futures: Dict[Any, aiokafka.ConsumerRecord]
 
     def __init__(
         self,
@@ -163,6 +164,7 @@ class SubscriptionConsumer:
         self._last_error = False
         self._needs_commit = False
         self._initialized = False
+        self._futures = dict()
 
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
@@ -228,8 +230,7 @@ class SubscriptionConsumer:
         pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(stream_id))
         listener = CustomConsumerRebalanceListener(
             consumer=consumer,
-            app=self._app,
-            group_id=self._subscription.group,
+            subscription=self,
         )
         consumer.subscribe(pattern=pattern, listener=listener)
         return consumer
@@ -355,16 +356,15 @@ class SubscriptionConsumer:
             last_getmany_time = curtime
 
             if data:
-                futures: Dict[Any, aiokafka.ConsumerRecord] = dict()
                 for tp, records in data.items():
                     for record in records:
                         handler = self._handle_message(record, commit=False)
                         fut = asyncio.create_task(handler)
-                        futures[fut] = record
+                        self._futures[fut] = record
 
                 # Wait and check for errors
                 done, pending = await asyncio.wait(
-                    futures.keys(),
+                    self._futures.keys(),
                     timeout=timeout,
                     return_when=asyncio.FIRST_EXCEPTION,
                 )
@@ -372,7 +372,9 @@ class SubscriptionConsumer:
                 for done_task in done:
                     # If something failed we want to hard fail and bring down the consumer
                     exc = done_task.exception()
-                    if exc:
+                    if isinstance(exc, asyncio.CancelledError):
+                        continue
+                    elif exc:
                         raise exc
 
                 # There is no point to resend to slow topic a task without timeout
@@ -381,7 +383,7 @@ class SubscriptionConsumer:
                         # Do not block cancel as fast as possible!!
                         timeout_task.cancel()
                         # And now send the record to the slow topic
-                        await self.publish_to_slow_topic(futures[timeout_task])
+                        await self.publish_to_slow_topic(self._futures[timeout_task])
 
             # Before asking for a new batch, lets persist the offsets
             await consumer.commit()
@@ -481,15 +483,19 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
     def __init__(
         self,
         consumer: aiokafka.AIOKafkaConsumer,
-        app: Application,
-        group_id: str,
+        subscription: SubscriptionConsumer,
     ):
         self.consumer = consumer
-        self.app = app
-        self.group_id = group_id
+        self.subscription = subscription
+        self.group_id = consumer._group_id
+        self.app = subscription._app
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
-        pass
+        if revoked:
+            for fut, record in self.subscription._futures.items():
+                tp = aiokafka.TopicPartition(record.topic, record.partition)
+                if tp in revoked:
+                    fut.cancel()
 
     async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition
@@ -500,9 +506,6 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
             assigned {TopicPartition} -- List of topics and partitions assigned
             to a given consumer.
         """
-        starting_pos = await self.app.topic_mng.list_consumer_group_offsets(
-            self.group_id, partitions=assigned
-        )
         logger.debug(f"Partitions assigned: {assigned}")
 
         for tp in assigned:
@@ -511,8 +514,3 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
                 partition=tp.partition,
                 group_id=self.group_id,
             ).inc()
-            if tp not in starting_pos or starting_pos[tp].offset == -1:
-                # detect if we've never consumed from this topic before
-                # decision right now is to go back to beginning
-                # and it's unclear if this is always right decision
-                await self.consumer.seek_to_beginning(tp)

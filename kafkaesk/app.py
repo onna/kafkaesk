@@ -384,6 +384,7 @@ class Application(Router):
             bootstrap_servers=cast(List[str], self._kafka_servers),
             loop=asyncio.get_event_loop(),
             group_id=group_id,
+            auto_offset_reset="earliest",
             api_version=self._kafka_api_version,
             enable_auto_commit=False,
             **{k: v for k, v in self.kafka_settings.items() if k in _aiokafka_consumer_settings},
