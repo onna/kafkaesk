@@ -33,6 +33,10 @@ class StopConsumer(Exception):
     ...
 
 
+class HandlerTaskCancelled(Exception):
+    ...
+
+
 class ConsumerUnhealthyException(Exception):
     def __init__(self, subscriber_consumer: SubscriptionConsumer, reason: str):
         self.subscriber_consumer = subscriber_consumer
