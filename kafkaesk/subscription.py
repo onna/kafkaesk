@@ -484,6 +484,7 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
         logger.debug(f"Partitions revoked: {revoked}")
+        return
         if revoked:
             for fut, record in self.subscription._futures.items():
                 tp = aiokafka.TopicPartition(record.topic, record.partition)
