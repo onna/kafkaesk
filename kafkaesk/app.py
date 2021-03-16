@@ -502,6 +502,7 @@ class Application(Router):
         return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.ALL_COMPLETED)
 
     async def stop(self) -> None:
+        logger.warning("Stopping consumer!!")
         async with self.get_lock("_"):
             # do not allow stop calls at same time
 

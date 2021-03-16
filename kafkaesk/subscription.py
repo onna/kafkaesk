@@ -186,7 +186,7 @@ class SubscriptionConsumer:
 
     async def healthy(self) -> None:
         if not self._running:
-            raise ConsumerUnhealthyException(self, "Consumer is not running")
+            raise ConsumerUnhealthyException(self, f"Consumer '{self._subscription.stream_id}' is not running")
         if self._consumer is not None and not await self._consumer._client.ready(
             self._consumer._coordinator.coordinator_id
         ):
@@ -364,6 +364,7 @@ class SubscriptionConsumer:
                     if isinstance(exc, asyncio.CancelledError):
                         continue
                     elif exc:
+                        logger.exception("!!Re-raising first exception", exc_info=exc)
                         raise exc
 
                 # There is no point to resend to slow topic a task without timeout
