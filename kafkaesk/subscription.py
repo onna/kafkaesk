@@ -1,4 +1,5 @@
 from .exceptions import ConsumerUnhealthyException
+from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .metrics import CONSUMED_MESSAGE_TIME
@@ -186,7 +187,9 @@ class SubscriptionConsumer:
 
     async def healthy(self) -> None:
         if not self._running:
-            raise ConsumerUnhealthyException(self, f"Consumer '{self._subscription.stream_id}' is not running")
+            raise ConsumerUnhealthyException(
+                self, f"Consumer '{self._subscription.stream_id}' is not running"
+            )
         if self._consumer is not None and not await self._consumer._client.ready(
             self._consumer._coordinator.coordinator_id
         ):
@@ -326,7 +329,7 @@ class SubscriptionConsumer:
         main = self._run_concurrent_inner(slow=False)
         slow = self._run_concurrent_inner(slow=True)
         await self.emit("started", subscription_consumer=self)
-        await asyncio.gather(main, slow)
+        await asyncio.wait([main, slow])
 
     async def _run_concurrent_inner(self, slow: bool = False) -> None:
         """
@@ -441,6 +444,8 @@ class SubscriptionConsumer:
             self._needs_commit = True
             if commit:
                 await self._maybe_commit()
+        except asyncio.CancelledError as err:
+            raise HandlerTaskCancelled from err
         except Exception as err:
             self._last_error = True
             CONSUMED_MESSAGES.labels(
@@ -485,7 +490,6 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
 
     async def on_partitions_revoked(self, revoked: List[aiokafka.structs.TopicPartition]) -> None:
         logger.debug(f"Partitions revoked: {revoked}")
-        return
         if revoked:
             for fut, record in self.subscription._futures.items():
                 tp = aiokafka.TopicPartition(record.topic, record.partition)
