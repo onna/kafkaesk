@@ -365,6 +365,7 @@ class SubscriptionConsumer:
                 )
 
                 for done_task in done:
+                    self._futures.pop(done_task, None)
                     # If something failed we want to hard fail and bring down the consumer
                     try:
                         # Beware!! `.exception()` call
@@ -376,12 +377,13 @@ class SubscriptionConsumer:
                         continue
 
                 # There is no point to resend to slow topic a task without timeout
-                if not slow:
-                    for timeout_task in pending:
-                        # Do not block cancel as fast as possible!!
+                for timeout_task in pending:
+                    # Do not block cancel as fast as possible!!
+                    raw_record = self._futures.pop(timeout_task, None)
+                    if not slow and raw_record:
                         timeout_task.cancel()
                         # And now send the record to the slow topic
-                        await self.publish_to_slow_topic(self._futures[timeout_task])
+                        await self.publish_to_slow_topic(raw_record)
 
             # Before asking for a new batch, lets persist the offsets
             try:
@@ -390,7 +392,8 @@ class SubscriptionConsumer:
                     for tp, offset in self._offsets.items()
                     if tp in consumer.assignment()
                 }
-                await consumer.commit(offsets)
+                if offsets:
+                    await consumer.commit(offsets)
             except aiokafka.errors.CommitFailedError:
                 logger.exception("Problem commiting offsets.")
 
