@@ -331,7 +331,7 @@ class SubscriptionConsumer:
         main = self._run_concurrent_inner(slow=False)
         slow = self._run_concurrent_inner(slow=True)
         await self.emit("started", subscription_consumer=self)
-        await asyncio.wait([main, slow])
+        await asyncio.gather(main, slow)
 
     async def _run_concurrent_inner(self, slow: bool = False) -> None:
         """
@@ -366,11 +366,14 @@ class SubscriptionConsumer:
 
                 for done_task in done:
                     # If something failed we want to hard fail and bring down the consumer
-                    exc = done_task.exception()
-                    if isinstance(exc, asyncio.CancelledError):
+                    try:
+                        # Beware!! `.exception()` call
+                        # doesnt raise unless: `CancelledError` or task not done
+                        # https://docs.python.org/3/library/asyncio-future.html#asyncio.Future.exception
+                        if exc := done_task.exception():
+                            raise exc
+                    except asyncio.CancelledError:
                         continue
-                    elif exc:
-                        raise exc
 
                 # There is no point to resend to slow topic a task without timeout
                 if not slow:
