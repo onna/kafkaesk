@@ -457,9 +457,7 @@ class SubscriptionConsumer:
             self._needs_commit = True
             if commit:
                 await self._maybe_commit()
-        except asyncio.CancelledError as err:
-            raise HandlerTaskCancelled from err
-        except Exception as err:
+        except BaseException as err:
             self._last_error = True
             CONSUMED_MESSAGES.labels(
                 stream_id=record.topic,
