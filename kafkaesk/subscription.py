@@ -506,9 +506,9 @@ class CustomConsumerRebalanceListener(aiokafka.ConsumerRebalanceListener):
                 tp = aiokafka.TopicPartition(record.topic, record.partition)
                 if tp in revoked:
                     fut.cancel()
+
             for tp in revoked:
-                if self.subscription._offsets[tp]:
-                    del self.subscription._offsets[tp]
+                self.subscription._offsets.pop(tp, None)
 
     async def on_partitions_assigned(self, assigned: List[aiokafka.structs.TopicPartition]) -> None:
         """This method will be called after partition
