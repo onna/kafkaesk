@@ -1,5 +1,4 @@
 from .exceptions import ConsumerUnhealthyException
-from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .metrics import CONSUMED_MESSAGE_TIME
