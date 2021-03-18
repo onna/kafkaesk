@@ -1,4 +1,5 @@
 from .exceptions import ConsumerUnhealthyException
+from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .metrics import CONSUMED_MESSAGE_TIME
@@ -456,7 +457,9 @@ class SubscriptionConsumer:
             self._needs_commit = True
             if commit:
                 await self._maybe_commit()
-        except BaseException as err:
+        except (Exception, asyncio.CancelledError) as err:
+            if isinstance(err, asyncio.CancelledError):
+                err = HandlerTaskCancelled()
             self._last_error = True
             CONSUMED_MESSAGES.labels(
                 stream_id=record.topic,
