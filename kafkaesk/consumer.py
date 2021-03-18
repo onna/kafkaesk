@@ -63,6 +63,8 @@ def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable[
             handler = _record_msg_handler  # type: ignore
         else:
             handler = functools.partial(_pydantic_msg_handler, annotation)  # type: ignore
+    else:
+        handler = _raw_msg_handler
 
     it = iter(sig.parameters.items())
     # first argument is required and its the payload
@@ -104,6 +106,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
     _message_handler: typing.Callable[[aiokafka.ConsumerRecord, opentracing.Span], None]
     _initialized: bool
     _running: bool
+    _partitions_assigned: bool
 
     def __init__(self,
                  stream_id: str,
@@ -114,6 +117,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                  concurrency: int = 1,
                  timeout_seconds: float = None):
         self._initialized = False
+        self._partitions_assigned = False
         self.stream_id = stream_id
         self.group_id = group_id
         self._coro = coro
@@ -130,8 +134,13 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
             await self.initialize()
 
         while not self._close:
+            if not self._has_partition_assignment():
+                logger.info("Partitions not assigned, waiting...")
+                await asyncio.sleep(.5)
+                continue
+
             try:
-                await self._consume_loop()
+                await self._consume()
             except aiokafka.errors.KafkaConnectionError:
                 # We retry
                 await asyncio.sleep(.5)
@@ -141,6 +150,9 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
             except Exception as err:
                 raise err
         await self.finalize()
+
+    def _has_partition_assignment(self) -> bool:
+        return self._partitions_assigned
 
     async def emit(self, name: str, *args: typing.Any, **kwargs: typing.Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -211,7 +223,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                 raise HandlerTaskCancelled() from err
         await self.emit("message", record=record)
 
-    async def _consume_loop(self):
+    async def _consume(self):
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
         if batch:
             futures = dict()
@@ -257,6 +269,10 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
             )
 
     async def _maybe_commit(self):
+        if not self._has_partition_assignment():
+            logger.warning("Cannot commit because no partitions are assigned!")
+            return
+
         await self._consumer.commit()
 
     async def publish(self, stream_id: str, record: aiokafka.ConsumerRecord) -> None:
@@ -272,13 +288,15 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
 
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
+        self._partitions_assigned = False
+
         # Wait for the batch to end
         # TODO: We need to add a timeout and then cancel the batch tasks
         async with self._processing:
             return
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
-        pass
+        self._partitions_assigned = True
 
     async def on_handler_timeout(self, record: aiokafka.ConsumerRecord) -> None:
         if self._timeout:
