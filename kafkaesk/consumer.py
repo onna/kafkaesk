@@ -244,7 +244,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                         pass
                     await self.on_handler_timeout(r)
 
-            await self._processing.release()
+            self._processing.release()
         await self._maybe_commit()
 
     async def _maybe_create_topic(self):
