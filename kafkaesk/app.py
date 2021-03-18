@@ -12,6 +12,7 @@ from .metrics import watch_publish
 from .retry import RetryHandler
 from .subscription import Subscription
 from .subscription import SubscriptionConsumer
+from .consumer import ConsumerThread
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
@@ -470,14 +471,33 @@ class Application(Router):
                 if consumed >= num_messages:
                     raise StopConsumer
 
-            consumer = SubscriptionConsumer(
-                self, subscription, event_handlers={"message": [on_message]}
+            consumer = ConsumerThread(
+                stream_id=subscription.stream_id,
+                group_id=subscription.group,
+                coro=subscription.func,
+                app=self,
+                event_handlers={"message": [on_message]},
+                concurrency=subscription.concurrency or 1,
+                timeout_seconds=subscription.timeout,
             )
+            slow_consumer = ConsumerThread(
+                stream_id=f"{subscription.stream_id}-slow",
+                group_id=subscription.group,
+                coro=subscription.func,
+                app=self,
+                event_handlers={"message": [on_message]},
+                concurrency=1,
+                timeout_seconds=None,
+            )
+
             self._subscription_consumers.append(consumer)
             await consumer.initialize()
             tasks.append(asyncio.create_task(consumer()))
+            self._subscription_consumers.append(slow_consumer)
+            await slow_consumer.initialize()
+            tasks.append(asyncio.create_task(slow_consumer()))
 
-        done, pending = await asyncio.wait(tasks, timeout=seconds)
+        done, pending = await asyncio.wait(tasks, timeout=seconds, return_when=asyncio.FIRST_COMPLETED)
         await self.stop()
 
         # re-raise any errors so we can validate during tests
@@ -493,8 +513,26 @@ class Application(Router):
         self._subscription_consumers_tasks = []
 
         for subscription in self._subscriptions:
-            consumer = SubscriptionConsumer(self, subscription)
+            consumer = ConsumerThread(
+                stream_id=subscription.stream_id,
+                group_id=subscription.group,
+                coro=subscription.func,
+                app=self,
+                concurrency=subscription.concurrency or 1,
+                timeout_seconds=subscription.timeout,
+            )
+            slow_consumer = ConsumerThread(
+                stream_id=f"{subscription.stream_id}-slow",
+                group_id=subscription.group,
+                coro=subscription.func,
+                app=self,
+                concurrency=1,
+                timeout_seconds=None,
+            )
+
+            #consumer = SubscriptionConsumer(self, subscription)
             self._subscription_consumers.append(consumer)
+            self._subscription_consumers.append(slow_consumer)
 
         self._subscription_consumers_tasks = [
             asyncio.create_task(c()) for c in self._subscription_consumers
@@ -510,7 +548,8 @@ class Application(Router):
                 return
 
             _, pending = await asyncio.wait(
-                [c.stop() for c in self._subscription_consumers if c], timeout=5
+                [c.stop() for c in self._subscription_consumers if c],
+                timeout=5
             )
             for task in pending:
                 # stop tasks that didn't finish
