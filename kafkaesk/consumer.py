@@ -1,5 +1,6 @@
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
+from .exceptions import UnhandledMessage
 import aiokafka
 import asyncio
 import fnmatch
@@ -28,8 +29,9 @@ def _pydantic_msg_handler(
     try:
         return model.parse_obj(data["data"])
     except pydantic.ValidationError:
+        # log the execption so we can see what fields failed
         logger.warning(f"Error parsing pydantic model:{model} {record}", exc_info=True)
-        raise Exception()
+        raise UnhandledMessage(f"Error parsing data: {model}")
 
 
 def _raw_msg_handler(
@@ -51,7 +53,6 @@ def _record_msg_handler(
 
 def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable[[aiokafka.ConsumerRecord, opentracing.Span], None]:
     """Introspection on the coroutine signature to inject dependencies"""
-
     sig = inspect.signature(coro)
     param_name = [k for k in sig.parameters.keys()][0]
     annotation = sig.parameters[param_name].annotation
@@ -285,4 +286,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
             await self.publish(slow_topic, record)
 
     async def on_handler_failed(self, exception, record):
-        raise exception
+        if isinstance(exception, UnhandledMessage):
+            logger.warning(f"Unhandled message, ignoring...", exc_info=exception)
+        else:
+            raise exception
