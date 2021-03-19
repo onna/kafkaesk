@@ -1,4 +1,5 @@
 from .exceptions import ConsumerUnhealthyException
+from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 
@@ -229,9 +230,12 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
 
             # Look for failures
             for task in done:
-                if exc := task.exception():
-                    if r := futures.pop(task, None):
-                        await self.on_handler_failed(exc, r)
+                if r := futures.pop(task, None):
+                    try:
+                        if exc := task.exception():
+                            await self.on_handler_failed(exc, r)
+                    except asyncio.CancelledError:
+                        await self.on_handler_failed(HandlerTaskCancelled(), r)
 
             # Process timeout tasks
             for task in pending:
