@@ -1,7 +1,7 @@
 from kafkaesk import Application
 from functools import partial
 from kafkaesk import Subscription
-from kafkaesk import SubscriptionConsumer
+from kafkaesk.consumer import ConsumerThread
 from kafkaesk.exceptions import ConsumerUnhealthyException
 from kafkaesk.exceptions import StopConsumer
 from kafkaesk.subscription import MessageHandler
@@ -21,8 +21,11 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture()
 def subscription():
-    yield SubscriptionConsumer(
-        Application(kafka_servers=["foobar"]), Subscription("foo", lambda record: 1, "group")
+    yield ConsumerThread(
+        stream_id="foo",
+        group_id="group",
+        coro=lambda record: 1,
+        app=Application(kafka_servers=["foobar"]),
     )
 
 
@@ -61,14 +64,6 @@ class TestMessageHandler:
 
 
 class TestSubscriptionConsumer:
-    async def test_consumer_property_rasises_exception(self, subscription):
-        with pytest.raises(RuntimeError):
-            subscription.consumer
-
-    async def test_retry_policy_property_rasises_exception(self, subscription):
-        with pytest.raises(RuntimeError):
-            subscription.retry_policy
-
     async def notest_maybe_commit(self, subscription):
         subscription._consumer = AsyncMock()
         subscription._needs_commit = True
@@ -117,72 +112,84 @@ class TestSubscriptionConsumer:
 
     async def test_emit(self):
         probe = AsyncMock()
-        sub = SubscriptionConsumer(
-            Application(),
-            Subscription("foo", lambda record: 1, "group"),
+
+        sub = ConsumerThread(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=Application(kafka_servers=["foobar"]),
             event_handlers={"event": [probe]},
         )
         await sub.emit("event", "foo", "bar")
         probe.assert_called_with("foo", "bar")
 
     async def test_emit_raises_stop(self):
-        sub = SubscriptionConsumer(
-            Application(),
-            Subscription("foo", lambda record: 1, "group"),
+        sub = ConsumerThread(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=Application(kafka_servers=["foobar"]),
             event_handlers={"event": [AsyncMock(side_effect=StopConsumer)]},
         )
+
         with pytest.raises(StopConsumer):
             await sub.emit("event", "foo", "bar")
 
     async def test_emit_swallow_ex(self):
-        sub = SubscriptionConsumer(
-            Application(),
-            Subscription("foo", lambda record: 1, "group"),
+        sub = ConsumerThread(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=Application(kafka_servers=["foobar"]),
             event_handlers={"event": [AsyncMock(side_effect=Exception)]},
         )
+
         await sub.emit("event", "foo", "bar")
 
     async def test_retries_on_connection_failure(self):
-        sub = SubscriptionConsumer(
-            Application(),
-            Subscription("foo", lambda record: 1, "group", concurrency=10),
+        sub = ConsumerThread(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=Application(kafka_servers=["foobar"]),
         )
+
         run_mock = AsyncMock()
         sleep = AsyncMock()
         run_mock.side_effect = [aiokafka.errors.KafkaConnectionError, StopConsumer]
+        sub._consumer = MagicMock()
         with patch.object(sub, "initialize", AsyncMock()), patch.object(
             sub, "finalize", AsyncMock()
-        ), patch.object(sub, "_run_concurrent", run_mock), patch(
-            "kafkaesk.subscription.asyncio.sleep", sleep
-        ):
+        ), patch.object(sub, "_consume", run_mock), patch("kafkaesk.consumer.asyncio.sleep", sleep):
             await sub()
             sleep.assert_called_once()
             assert len(run_mock.mock_calls) == 2
 
     async def test_finalize_handles_exceptions(self):
-        sub = SubscriptionConsumer(
-            Application(),
-            Subscription("foo", lambda record: 1, "group"),
+        sub = ConsumerThread(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=Application(kafka_servers=["foobar"]),
         )
+
         consumer = AsyncMock()
         consumer.stop.side_effect = Exception
         consumer.commit.side_effect = Exception
-        retry_policy = AsyncMock()
-        retry_policy.finalize.side_effect = Exception
 
         sub._consumer = consumer
-        sub._retry_policy = retry_policy
         await sub.finalize()
 
         consumer.stop.assert_called_once()
-        consumer.commit.assert_called_once()
-        retry_policy.finalize.assert_called_once()
 
     async def test_run_exits_when_fut_closed_fut(self):
-        sub = SubscriptionConsumer(
-            Application(),
-            Subscription("foo", lambda record: 1, "group"),
+        sub = ConsumerThread(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=Application(kafka_servers=["foobar"]),
         )
+
         consumer = AsyncMock()
         consumer.getmany.return_value = {"": [record_factory() for _ in range(10)]}
         sub._consumer = consumer
@@ -191,11 +198,11 @@ class TestSubscriptionConsumer:
         async def _handle_message(record):
             await asyncio.sleep(0.03)
 
-        with patch.object(sub, "_handle_message", _handle_message):
-            task = asyncio.create_task(sub._run_concurrent())
+        with patch.object(sub, "_handler", _handle_message):
+            task = asyncio.create_task(sub._consume())
             await asyncio.sleep(0.01)
             stop_task = asyncio.create_task(sub.stop())
             await asyncio.sleep(0.01)
-            sub._close_fut.set_result(None)
+            sub._close.set_result(None)
 
             await asyncio.wait([stop_task, task])

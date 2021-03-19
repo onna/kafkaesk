@@ -4,7 +4,6 @@ import aiokafka
 
 if TYPE_CHECKING:  # pragma: no cover
     from .app import SchemaRegistration
-    from .app import SubscriptionConsumer
 else:
     SchemaRegistration = SubscriptionConsumer = None
 
@@ -38,8 +37,7 @@ class HandlerTaskCancelled(Exception):
 
 
 class ConsumerUnhealthyException(Exception):
-    def __init__(self, subscriber_consumer: SubscriptionConsumer, reason: str):
-        self.subscriber_consumer = subscriber_consumer
+    def __init__(self, reason: str):
         self.reason = reason
 
 
