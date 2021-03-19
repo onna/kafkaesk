@@ -1,5 +1,4 @@
 from .exceptions import ConsumerUnhealthyException
-from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 
@@ -210,10 +209,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
 
     async def _handler(self, record: aiokafka.ConsumerRecord) -> None:
         with self._span(record) as span:
-            try:
-                await self._message_handler(record, span)
-            except asyncio.CancelledError as err:
-                raise HandlerTaskCancelled() from err
+            await self._message_handler(record, span)
 
     async def _consume(self) -> None:
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
