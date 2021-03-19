@@ -1,3 +1,4 @@
+from .consumer import ConsumerThread
 from .exceptions import AppNotConfiguredException
 from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
@@ -11,8 +12,6 @@ from .metrics import watch_kafka
 from .metrics import watch_publish
 from .retry import RetryHandler
 from .subscription import Subscription
-from .subscription import SubscriptionConsumer
-from .consumer import ConsumerThread
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
@@ -211,7 +210,7 @@ class Application(Router):
         self._topic_prefix = topic_prefix
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
-        self._subscription_consumers: List[SubscriptionConsumer] = []
+        self._subscription_consumers: List[ConsumerThread] = []
         self._subscription_consumers_tasks: List[asyncio.Task] = []
 
         self.auto_commit = auto_commit
@@ -490,15 +489,13 @@ class Application(Router):
                 timeout_seconds=None,
             )
 
-            self._subscription_consumers.append(consumer)
-            await consumer.initialize()
+            self._subscription_consumers.extend([consumer, slow_consumer])
             tasks.append(asyncio.create_task(consumer(), name=str(consumer)))
-
-            self._subscription_consumers.append(slow_consumer)
-            await slow_consumer.initialize()
             tasks.append(asyncio.create_task(slow_consumer(), name=str(slow_consumer)))
 
-        done, pending = await asyncio.wait(tasks, timeout=seconds, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            tasks, timeout=seconds, return_when=asyncio.FIRST_EXCEPTION
+        )
         await self.stop()
 
         # re-raise any errors so we can validate during tests
@@ -531,7 +528,7 @@ class Application(Router):
                 timeout_seconds=None,
             )
 
-            #consumer = SubscriptionConsumer(self, subscription)
+            # consumer = SubscriptionConsumer(self, subscription)
             self._subscription_consumers.append(consumer)
             self._subscription_consumers.append(slow_consumer)
 
@@ -549,8 +546,7 @@ class Application(Router):
                 return
 
             _, pending = await asyncio.wait(
-                [c.stop() for c in self._subscription_consumers if c],
-                timeout=5
+                [c.stop() for c in self._subscription_consumers if c], timeout=5
             )
             for task in pending:
                 # stop tasks that didn't finish

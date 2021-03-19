@@ -105,8 +105,11 @@ class TestApplication:
 
     async def test_consumer_health_check_raises_exception(self):
         app = kafkaesk.Application()
-        subscription_consumer = kafkaesk.SubscriptionConsumer(
-            app, kafkaesk.Subscription("foo", lambda: 1, "group")
+        subscription_consumer = kafkaesk.ConsumerThread(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=app,
         )
         app._subscription_consumers.append(subscription_consumer)
         subscription_consumer._consumer = AsyncMock()

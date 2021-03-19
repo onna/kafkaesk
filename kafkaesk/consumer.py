@@ -2,15 +2,16 @@ from .exceptions import ConsumerUnhealthyException
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
+
 import aiokafka
 import asyncio
 import fnmatch
 import functools
 import inspect
 import logging
-import pydantic
-import orjson
 import opentracing
+import orjson
+import pydantic
 import typing
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -35,9 +36,7 @@ def _pydantic_msg_handler(
         raise UnhandledMessage(f"Error parsing data: {model}")
 
 
-def _raw_msg_handler(
-    record: aiokafka.structs.ConsumerRecord
-) -> typing.Dict[str, typing.Any]:
+def _raw_msg_handler(record: aiokafka.structs.ConsumerRecord) -> typing.Dict[str, typing.Any]:
     data: typing.Dict[str, typing.Any] = orjson.loads(record.value)
     return data
 
@@ -46,17 +45,16 @@ def _bytes_msg_handler(record: aiokafka.structs.ConsumerRecord) -> bytes:
     return record.value
 
 
-def _record_msg_handler(
-    record: aiokafka.structs.ConsumerRecord
-) -> aiokafka.structs.ConsumerRecord:
+def _record_msg_handler(record: aiokafka.structs.ConsumerRecord) -> aiokafka.structs.ConsumerRecord:
     return record
 
 
-def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable[[aiokafka.ConsumerRecord, opentracing.Span], None]:
+def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable:
     """Introspection on the coroutine signature to inject dependencies"""
     sig = inspect.signature(coro)
     param_name = [k for k in sig.parameters.keys()][0]
     annotation = sig.parameters[param_name].annotation
+    handler = _raw_msg_handler
     if annotation and annotation != sig.empty:
         if annotation == bytes:
             handler = _bytes_msg_handler  # type: ignore
@@ -64,8 +62,6 @@ def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable[
             handler = _record_msg_handler  # type: ignore
         else:
             handler = functools.partial(_pydantic_msg_handler, annotation)  # type: ignore
-    else:
-        handler = _raw_msg_handler
 
     it = iter(sig.parameters.items())
     # first argument is required and its the payload
@@ -104,18 +100,20 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
     _close: typing.Optional[asyncio.Future]
     _consumer: aiokafka.AIOKafkaConsumer
     _offsets: typing.Dict[aiokafka.TopicPartition, int]
-    _message_handler: typing.Callable[[aiokafka.ConsumerRecord, opentracing.Span], None]
+    _message_handler: typing.Callable
     _initialized: bool
-    _running: bool
+    _running: bool = False
 
-    def __init__(self,
-                 stream_id: str,
-                 group_id: str,
-                 coro: typing.Callable,
-                 app: "Application",
-                 event_handlers: typing.Optional[typing.Dict[str, typing.List[typing.Callable]]] = None,
-                 concurrency: int = 1,
-                 timeout_seconds: float = None):
+    def __init__(
+        self,
+        stream_id: str,
+        group_id: str,
+        coro: typing.Callable,
+        app: "Application",
+        event_handlers: typing.Optional[typing.Dict[str, typing.List[typing.Callable]]] = None,
+        concurrency: int = 1,
+        timeout_seconds: float = None,
+    ):
         self._initialized = False
         self.stream_id = stream_id
         self.group_id = group_id
@@ -126,21 +124,22 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         self._timeout = timeout_seconds
         self._close = None
         self._app = app
-        self._message_handler = build_handler(coro, app)
+        self._message_handler = build_handler(coro, app)  # type: ignore
 
-    async def __call__(self):
+    async def __call__(self) -> None:
         if not self._initialized:
             await self.initialize()
 
         try:
             while not self._close:
-                if not self._consumer.assignment():
-                    await asyncio.sleep(0)
-                    continue
-                await self._consume()
-        except aiokafka.errors.KafkaConnectionError:
-            # We retry
-            await asyncio.sleep(.5)
+                try:
+                    if not self._consumer.assignment():
+                        await asyncio.sleep(0)
+                        continue
+                    await self._consume()
+                except aiokafka.errors.KafkaConnectionError:
+                    # We retry
+                    await asyncio.sleep(0.5)
         except StopConsumer:
             logger.info("Consumer stopped, exiting")
         finally:
@@ -155,7 +154,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
             except Exception:
                 logger.warning(f"Error emitting event: {name}: {func}", exc_info=True)
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         self._close = None
         self._running = True
         self._processing = asyncio.Lock()
@@ -164,8 +163,12 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         await self._consumer.start()
         self._initialized = True
 
-    async def finalize(self):
-        await self._consumer.stop()
+    async def finalize(self) -> None:
+        try:
+            await self._consumer.stop()
+        except Exception:
+            logger.info("Could not commit on shutdown", exc_info=True)
+
         self._initialized = False
         self._running = False
         if self._close:
@@ -190,7 +193,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
     def __repr__(self) -> str:
         return f"<Consumer: {self.stream_id}, Group: {self.group_id}>"
 
-    def _span(self, record: aiokafka.ConsumerRecord):
+    def _span(self, record: aiokafka.ConsumerRecord) -> opentracing.SpanContext:
         tracer = opentracing.tracer
         headers = {x[0]: x[1].decode() for x in record.headers or []}
         parent = tracer.extract(opentracing.Format.TEXT_MAP, headers)
@@ -205,17 +208,17 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         )
         return context.span
 
-    async def _handler(self, record: aiokafka.ConsumerRecord):
+    async def _handler(self, record: aiokafka.ConsumerRecord) -> None:
         with self._span(record) as span:
             try:
                 await self._message_handler(record, span)
             except asyncio.CancelledError as err:
                 raise HandlerTaskCancelled() from err
 
-    async def _consume(self):
+    async def _consume(self) -> None:
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
         if batch:
-            futures = dict()
+            futures: typing.Dict[asyncio.Future[typing.Any], aiokafka.ConsumerRecord] = dict()
             await self._processing.acquire()
 
             for tp, records in batch.items():
@@ -225,9 +228,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                     futures[fut] = record
 
             done, pending = await asyncio.wait(
-                futures.keys(),
-                timeout=self._timeout,
-                return_when=asyncio.FIRST_EXCEPTION
+                futures.keys(), timeout=self._timeout, return_when=asyncio.FIRST_EXCEPTION
             )
 
             # Look for failures
@@ -254,15 +255,13 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
 
             self._processing.release()
 
-    async def _maybe_create_topic(self):
+    async def _maybe_create_topic(self) -> None:
         # TBD: should we manage this here?
         return
         if not await self._app.topic_mng.topic_exists(self.stream_id):
-            await self._app.topic_mng.create_topic(
-                topic=self.stream_id
-            )
+            await self._app.topic_mng.create_topic(topic=self.stream_id)
 
-    async def _maybe_commit(self):
+    async def _maybe_commit(self) -> None:
         if not self._consumer.assignment:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
@@ -270,21 +269,17 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
 
     async def publish(self, stream_id: str, record: aiokafka.ConsumerRecord) -> None:
         # TODO: propagate the headers as well
-        fut = await self._app.raw_publish(stream_id=stream_id,
-                                          data=record.value,
-                                          key=record.key)
+        fut = await self._app.raw_publish(stream_id=stream_id, data=record.value, key=record.key)
         await fut
 
     async def healthy(self) -> None:
         if not self._running:
-            raise ConsumerUnhealthyException(
-                self, f"Consumer '{self.stream_id}' is not running"
-            )
+            raise ConsumerUnhealthyException(f"Consumer '{self}' is not running")
 
         if self._consumer is not None and not await self._consumer._client.ready(
-                self._consumer._coordinator.coordinator_id
+            self._consumer._coordinator.coordinator_id
         ):
-            raise ConsumerUnhealthyException(self, "Consumer is not ready")
+            raise ConsumerUnhealthyException(f"Consumer '{self}' is not ready")
         return
 
     # Event handlers
@@ -304,8 +299,10 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
             slow_topic = f"{self.stream_id}-slow"
             await self.publish(slow_topic, record)
 
-    async def on_handler_failed(self, exception, record):
+    async def on_handler_failed(
+        self, exception: BaseException, record: aiokafka.ConsumerRecord
+    ) -> None:
         if isinstance(exception, UnhandledMessage):
-            logger.warning(f"Unhandled message, ignoring...", exc_info=exception)
+            logger.warning("Unhandled message, ignoring...", exc_info=exception)
         else:
             raise exception
