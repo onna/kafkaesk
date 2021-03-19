@@ -492,10 +492,11 @@ class Application(Router):
 
             self._subscription_consumers.append(consumer)
             await consumer.initialize()
-            tasks.append(asyncio.create_task(consumer()))
+            tasks.append(asyncio.create_task(consumer(), name=str(consumer)))
+
             self._subscription_consumers.append(slow_consumer)
             await slow_consumer.initialize()
-            tasks.append(asyncio.create_task(slow_consumer()))
+            tasks.append(asyncio.create_task(slow_consumer(), name=str(slow_consumer)))
 
         done, pending = await asyncio.wait(tasks, timeout=seconds, return_when=asyncio.FIRST_COMPLETED)
         await self.stop()
@@ -537,7 +538,7 @@ class Application(Router):
         self._subscription_consumers_tasks = [
             asyncio.create_task(c()) for c in self._subscription_consumers
         ]
-        return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.ALL_COMPLETED)
+        return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.FIRST_EXCEPTION)
 
     async def stop(self) -> None:
         logger.warning("Stopping consumer!!")
@@ -611,7 +612,6 @@ def run(app: Optional[Application] = None) -> None:
             app.configure(api_version=opts.api_version)
 
     try:
-        print(f"Running kafkaesk consumer {app}")
         asyncio.run(run_app(app))
     except asyncio.CancelledError:  # pragma: no cover
         logger.debug("Closing because task was exited")
