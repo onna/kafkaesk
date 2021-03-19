@@ -271,51 +271,6 @@ async def test_cache_topic_exists_topic_mng(kafka):
     assert await mng.topic_exists(topic_id)
 
 
-async def test_subscription_creates_retry_policy(app):
-    @app.schema("Foo", version=1)
-    class Foo(pydantic.BaseModel):
-        bar: str
-
-    @app.subscribe("foo.bar", group="test_group")
-    async def noop(data: Foo):
-        ...
-
-    policy_mock = Mock(return_value=AsyncMock())
-    factory_mock = Mock(return_value=policy_mock)
-    with patch("kafkaesk.subscription.RetryPolicy", new_callable=factory_mock):
-        async with app:
-            fut = asyncio.create_task(app.consume_for(1, seconds=8))
-            await asyncio.sleep(0.2)
-
-            await app.publish("foo.bar", Foo(bar=1))
-            await app.flush()
-            await fut
-
-        policy_mock.assert_called_once()
-        policy_mock.return_value.initialize.assert_awaited_once()
-        policy_mock.return_value.finalize.assert_awaited_once()
-
-
-async def test_subscription_calls_retry_policy(app):
-    handler_mock = AsyncMock()
-
-    @app.schema("Foo", version=1)
-    class Foo(pydantic.BaseModel):
-        bar: str
-
-    @app.subscribe("foo.bar", group="test_group", retry_handlers={Exception: handler_mock})
-    async def noop(data: Foo):
-        raise Exception("Unhandled Exception")
-
-    async with app:
-        fut = asyncio.create_task(app.consume_for(1, seconds=8))
-        await app.publish("foo.bar", Foo(bar=1))
-        await app.flush()
-        await fut
-
-    handler_mock.assert_awaited_once()
-
-
 async def test_subscription_failure(app):
     probe = Mock()
     stream_id = "foo-bar-subfailure"

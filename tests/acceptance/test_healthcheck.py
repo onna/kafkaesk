@@ -50,6 +50,6 @@ async def test_health_check_should_succeed(app):
     async with app:
         produce = asyncio.create_task(producer(app, TOPIC))
         asyncio.create_task(app.consume_forever())
-        await asyncio.sleep(2)  # wait for some to produce and then be consumed to cause failure
+        await asyncio.sleep(1)  # wait for some to produce and then be consumed to cause failure
         await app.health_check()
         produce.cancel()

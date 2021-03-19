@@ -1,3 +1,4 @@
+from .exceptions import ConsumerUnhealthyException
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
@@ -106,7 +107,6 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
     _message_handler: typing.Callable[[aiokafka.ConsumerRecord, opentracing.Span], None]
     _initialized: bool
     _running: bool
-    _partitions_assigned: bool
 
     def __init__(self,
                  stream_id: str,
@@ -117,7 +117,6 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                  concurrency: int = 1,
                  timeout_seconds: float = None):
         self._initialized = False
-        self._partitions_assigned = False
         self.stream_id = stream_id
         self.group_id = group_id
         self._coro = coro
@@ -133,26 +132,19 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         if not self._initialized:
             await self.initialize()
 
-        while not self._close:
-            if not self._has_partition_assignment():
-                logger.info("Partitions not assigned, waiting...")
-                await asyncio.sleep(.5)
-                continue
-
-            try:
+        try:
+            while not self._close:
+                if not self._consumer.assignment():
+                    await asyncio.sleep(0)
+                    continue
                 await self._consume()
-            except aiokafka.errors.KafkaConnectionError:
-                # We retry
-                await asyncio.sleep(.5)
-            except StopConsumer:
-                logger.info("Consumer stopped, exiting")
-                break
-            except Exception as err:
-                raise err
-        await self.finalize()
-
-    def _has_partition_assignment(self) -> bool:
-        return self._partitions_assigned
+        except aiokafka.errors.KafkaConnectionError:
+            # We retry
+            await asyncio.sleep(.5)
+        except StopConsumer:
+            logger.info("Consumer stopped, exiting")
+        finally:
+            await self.finalize()
 
     async def emit(self, name: str, *args: typing.Any, **kwargs: typing.Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -217,11 +209,8 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         with self._span(record) as span:
             try:
                 await self._message_handler(record, span)
-            except Exception as err:
-                raise err
             except asyncio.CancelledError as err:
                 raise HandlerTaskCancelled() from err
-        await self.emit("message", record=record)
 
     async def _consume(self):
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
@@ -257,8 +246,13 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                         pass
                     await self.on_handler_timeout(r)
 
+            # Commit first and then call the event subscribers
+            await self._maybe_commit()
+            for _, records in batch.items():
+                for record in records:
+                    await self.emit("message", record=record)
+
             self._processing.release()
-        await self._maybe_commit()
 
     async def _maybe_create_topic(self):
         # TBD: should we manage this here?
@@ -269,10 +263,9 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
             )
 
     async def _maybe_commit(self):
-        if not self._has_partition_assignment():
+        if not self._consumer.assignment:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
-
         await self._consumer.commit()
 
     async def publish(self, stream_id: str, record: aiokafka.ConsumerRecord) -> None:
@@ -282,21 +275,29 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                                           key=record.key)
         await fut
 
-    async def healthy(self):
-        # TODO: implement this logic
+    async def healthy(self) -> None:
+        if not self._running:
+            raise ConsumerUnhealthyException(
+                self, f"Consumer '{self.stream_id}' is not running"
+            )
+
+        if self._consumer is not None and not await self._consumer._client.ready(
+                self._consumer._coordinator.coordinator_id
+        ):
+            raise ConsumerUnhealthyException(self, "Consumer is not ready")
         return
 
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
-        self._partitions_assigned = False
-
         # Wait for the batch to end
         # TODO: We need to add a timeout and then cancel the batch tasks
-        async with self._processing:
-            return
+        if revoked:
+            async with self._processing:
+                return
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
-        self._partitions_assigned = True
+        for tp in assigned:
+            pass
 
     async def on_handler_timeout(self, record: aiokafka.ConsumerRecord) -> None:
         if self._timeout:
