@@ -216,12 +216,12 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
     async def _consume(self) -> None:
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
 
-        CONSUMED_MESSAGES_BATCH_SIZE.labels(
-            stream_id=self.stream_id,
-            group_id=self.group_id,
-        ).observe(len(batch))
-
         if batch:
+            CONSUMED_MESSAGES_BATCH_SIZE.labels(
+                stream_id=self.stream_id,
+                group_id=self.group_id,
+            ).observe(len(batch))
+
             futures: typing.Dict[asyncio.Future[typing.Any], aiokafka.ConsumerRecord] = dict()
             await self._processing.acquire()
 
