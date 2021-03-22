@@ -57,7 +57,7 @@ CONSUMED_MESSAGES_BATCH_SIZE = client.Histogram(
     "kafkaesk_consumed_messages_batch_size",
     "Size of message batches consumed",
     ["stream_id", "group_id"],
-    buckets=[0, 5, 10, 20, 50, 100, 200, 500, 1000],
+    buckets=[1, 5, 10, 20, 50, 100, 200, 500, 1000],
 )
 
 CONSUMED_MESSAGE_TIME = client.Histogram(
