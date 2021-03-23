@@ -1,6 +1,6 @@
 from .produce import Foo
 from .produce import producer
-from kafkaesk.subscription import SubscriptionConsumer
+from kafkaesk.consumer import ConsumerThread
 
 import asyncio
 import kafkaesk
