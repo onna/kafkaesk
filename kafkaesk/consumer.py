@@ -25,6 +25,26 @@ else:
 logger = logging.getLogger(__name__)
 
 
+class Subscription:
+    def __init__(
+        self,
+        stream_id: str,
+        func: typing.Callable,
+        group: str,
+        *,
+        timeout_seconds: float = None,
+        concurrency: int = None,
+    ):
+        self.stream_id = stream_id
+        self.func = func
+        self.group = group
+        self.timeout = timeout_seconds
+        self.concurrency = concurrency
+
+    def __repr__(self) -> str:
+        return f"<Subscription stream: {self.stream_id} >"
+
+
 def _pydantic_msg_handler(
     model: typing.Type[pydantic.BaseModel], record: aiokafka.ConsumerRecord
 ) -> pydantic.BaseModel:
