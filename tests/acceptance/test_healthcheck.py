@@ -4,7 +4,6 @@ from kafkaesk.exceptions import ConsumerUnhealthyException
 from .produce import producer
 from kafkaesk.exceptions import ProducerUnhealthyException
 from kafkaesk.kafka import KafkaTopicManager
-from kafkaesk.retry import Forward
 from unittest.mock import call
 from unittest.mock import MagicMock
 from unittest.mock import Mock

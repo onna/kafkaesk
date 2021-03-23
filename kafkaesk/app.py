@@ -1,4 +1,5 @@
 from .consumer import ConsumerThread
+from .consumer import Subscription
 from .exceptions import AppNotConfiguredException
 from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
@@ -10,8 +11,6 @@ from .metrics import PUBLISHED_MESSAGES
 from .metrics import PUBLISHED_MESSAGES_TIME
 from .metrics import watch_kafka
 from .metrics import watch_publish
-from .retry import RetryHandler
-from .subscription import Subscription
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
@@ -139,14 +138,12 @@ class Router:
         *,
         timeout_seconds: float = 5,
         concurrency: int = None,
-        retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
     ) -> Callable:
         def inner(func: Callable) -> Callable:
             subscription = Subscription(
                 stream_id,
                 func,
                 group or func.__name__,
-                retry_handlers=retry_handlers,
                 concurrency=concurrency,
                 timeout_seconds=timeout_seconds,
             )
