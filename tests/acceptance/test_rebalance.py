@@ -15,14 +15,20 @@ async def test_cancel_getone(app):
 
     app.schema(streams=[TOPIC])(Foo)
 
-    @app.subscribe(TOPIC, group=GROUP)
-    async def consumer(ob: Foo, record, app):
-        ...
+    async def handler(*args, **kwargs):
+        pass
 
     async with app:
-        sub_consumer = SubscriptionConsumer(app, app.subscriptions[0])
-        await sub_consumer.initialize()
-        raw_consumer = sub_consumer.consumer
+        consumer = ConsumerThread(
+            stream_id=TOPIC,
+            group_id=GROUP,
+            coro=handler,
+            app=app,
+            concurrency=1,
+            timeout_seconds=1,
+        )
+        await consumer.initialize()
+        raw_consumer = consumer._consumer
         with raw_consumer._subscription.fetch_context():
             try:
                 await asyncio.wait_for(raw_consumer._fetcher.next_record([]), timeout=0.1)

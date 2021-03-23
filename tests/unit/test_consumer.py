@@ -35,7 +35,6 @@ def test_subscription_repr():
 
 
 class TestMessageHandler:
-
     def factory(self, func):
         return build_handler(func, app=MagicMock())
 
