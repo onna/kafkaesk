@@ -2,6 +2,7 @@ from aiokafka import ConsumerRecord
 from kafkaesk import Application
 from kafkaesk.exceptions import ProducerUnhealthyException
 from kafkaesk.kafka import KafkaTopicManager
+from kafkaesk.retry import Forward
 from unittest.mock import call
 from unittest.mock import MagicMock
 from unittest.mock import Mock
@@ -157,6 +158,7 @@ async def test_multiple_subscribers_different_models(app):
     @app.subscribe(
         "foo.bar",
         group="test_group",
+        retry_handlers={Exception: Forward("test_group__foo.bar__Exception")},
     )
     async def consume1(data: Foo1):
         consumed1.append(data)
@@ -164,6 +166,7 @@ async def test_multiple_subscribers_different_models(app):
     @app.subscribe(
         "foo.bar",
         group="test_group_2",
+        retry_handlers={Exception: Forward("test_group__foo.bar__Exception")},
     )
     async def consume2(data: Foo2):
         consumed2.append(data)
