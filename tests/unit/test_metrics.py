@@ -1,7 +1,7 @@
 from aiokafka.structs import OffsetAndMetadata
 from aiokafka.structs import TopicPartition
 from kafkaesk.app import Application
-from kafkaesk.subscription import CustomConsumerRebalanceListener
+from kafkaesk.consumer import ConsumerThread
 from tests.utils import record_factory
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -13,16 +13,20 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
-async def notest_record_metric_on_rebalance():
-    with patch("kafkaesk.subscription.CONSUMER_REBALANCED") as rebalance_metric:
+async def test_record_metric_on_rebalance():
+    async def coro(*arg, **kwargs):
+        pass
+
+    with patch("kafkaesk.consumer.CONSUMER_REBALANCED") as rebalance_metric:
         app_mock = AsyncMock()
         app_mock.topic_mng.list_consumer_group_offsets.return_value = {
             TopicPartition(topic="foobar", partition=0): OffsetAndMetadata(offset=0, metadata={})
         }
-        rebalance_listener = CustomConsumerRebalanceListener(
-            AsyncMock(),
-            app_mock,
+        rebalance_listener = ConsumerThread(
+            "stream.foo",
             "group",
+            coro,
+            app_mock,
         )
         await rebalance_listener.on_partitions_assigned(
             [TopicPartition(topic="foobar", partition=0)]

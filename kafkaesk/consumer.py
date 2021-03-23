@@ -3,6 +3,7 @@ from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
 from .metrics import CONSUMED_MESSAGES_BATCH_SIZE
+from .metrics import CONSUMER_REBALANCED
 
 import aiokafka
 import asyncio
@@ -237,10 +238,12 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
 
         if batch:
+            record_count = sum(len(records) for records in batch.values())
+
             CONSUMED_MESSAGES_BATCH_SIZE.labels(
                 stream_id=self.stream_id,
                 group_id=self.group_id,
-            ).observe(len(batch))
+            ).observe(record_count)
 
             futures: typing.Dict[asyncio.Future[typing.Any], aiokafka.ConsumerRecord] = dict()
             await self._processing.acquire()
@@ -318,8 +321,14 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
                 return
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
+        logger.info(f"Partitions assigned: {assigned}")
+
         for tp in assigned:
-            pass
+            CONSUMER_REBALANCED.labels(
+                stream_id=tp.topic,
+                partition=tp.partition,
+                group_id=self.group_id,
+            ).inc()
 
     async def on_handler_timeout(self, record: aiokafka.ConsumerRecord) -> None:
         if self._timeout:

@@ -1,10 +1,10 @@
 from kafkaesk import Application
 from functools import partial
 from kafkaesk import Subscription
+from kafkaesk.consumer import build_handler
 from kafkaesk.consumer import ConsumerThread
 from kafkaesk.exceptions import ConsumerUnhealthyException
 from kafkaesk.exceptions import StopConsumer
-from kafkaesk.subscription import MessageHandler
 from tests.utils import record_factory
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -35,32 +35,35 @@ def test_subscription_repr():
 
 
 class TestMessageHandler:
+
     def factory(self, func):
-        consumer = MagicMock()
-        consumer._subscription.func = func
-        return MessageHandler(consumer)
+        return build_handler(func, app=MagicMock())
 
     async def test_message_handler(self):
-        async def raw_func(data):
-            assert isinstance(data, dict)
+        side_effect = None
 
-        mh = self.factory(raw_func)
-        await mh.handle(record_factory(), None)
+        async def raw_func(data):
+            nonlocal side_effect
+            assert isinstance(data, dict)
+            side_effect = True
+
+        handler = self.factory(raw_func)
+        await handler(record_factory(), None)
+        assert side_effect is True
 
     async def test_message_handler_map_types(self):
         class Foo(pydantic.BaseModel):
             foo: str
 
-        async def handle_func(ob: Foo, schema, record, app, subscriber, span: opentracing.Span):
+        async def handle_func(ob: Foo, schema, record, app, span: opentracing.Span):
             assert ob.foo == "bar"
             assert schema == "Foo:1"
             assert record is not None
             assert app is not None
-            assert subscriber is not None
             assert span is not None
 
-        mh = self.factory(handle_func)
-        await mh.handle(record_factory(), MagicMock())
+        handler = self.factory(handle_func)
+        await handler(record_factory(), MagicMock())
 
 
 class TestSubscriptionConsumer:
