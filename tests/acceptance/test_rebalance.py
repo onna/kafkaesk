@@ -77,7 +77,7 @@ async def test_many_consumers_rebalancing(kafka, topic_prefix):
         await apps[idx].stop()
 
 
-async def _test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
+async def test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
     """
     No matter what, even without reassignment, some messages
     seem to be relayed. You can see if when a single consumer and no rebalance
