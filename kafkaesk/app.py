@@ -420,12 +420,6 @@ class Application(Router):
                             if reg.retention is not None
                             else None,
                         )
-                        await self.topic_mng.create_topic(
-                            f"{topic_id}-slow",
-                            retention_ms=reg.retention * 1000
-                            if reg.retention is not None
-                            else None,
-                        )
 
         self._initialized = True
 
@@ -476,19 +470,9 @@ class Application(Router):
                 concurrency=subscription.concurrency or 1,
                 timeout_seconds=subscription.timeout,
             )
-            slow_consumer = BatchConsumer(
-                stream_id=f"{subscription.stream_id}-slow",
-                group_id=subscription.group,
-                coro=subscription.func,
-                app=self,
-                event_handlers={"message": [on_message]},
-                concurrency=1,
-                timeout_seconds=None,
-            )
 
-            self._subscription_consumers.extend([consumer, slow_consumer])
+            self._subscription_consumers.append(consumer)
             tasks.append(asyncio.create_task(consumer(), name=str(consumer)))
-            tasks.append(asyncio.create_task(slow_consumer(), name=str(slow_consumer)))
 
         done, pending = await asyncio.wait(
             tasks, timeout=seconds, return_when=asyncio.FIRST_EXCEPTION
@@ -516,18 +500,7 @@ class Application(Router):
                 concurrency=subscription.concurrency or 1,
                 timeout_seconds=subscription.timeout,
             )
-            slow_consumer = BatchConsumer(
-                stream_id=f"{subscription.stream_id}-slow",
-                group_id=subscription.group,
-                coro=subscription.func,
-                app=self,
-                concurrency=1,
-                timeout_seconds=None,
-            )
-
-            # consumer = SubscriptionConsumer(self, subscription)
             self._subscription_consumers.append(consumer)
-            self._subscription_consumers.append(slow_consumer)
 
         self._subscription_consumers_tasks = [
             asyncio.create_task(c()) for c in self._subscription_consumers
