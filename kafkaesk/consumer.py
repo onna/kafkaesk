@@ -239,53 +239,54 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     async def _consume(self) -> None:
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
 
-        if batch:
-            record_count = sum(len(records) for records in batch.values())
-
-            CONSUMED_MESSAGES_BATCH_SIZE.labels(
-                stream_id=self.stream_id,
-                group_id=self.group_id,
-            ).observe(record_count)
-
-            futures: typing.Dict[asyncio.Future[typing.Any], aiokafka.ConsumerRecord] = dict()
-            await self._processing.acquire()
-
-            for tp, records in batch.items():
-                for record in records:
-                    coro = self._handler(record)
-                    fut = asyncio.create_task(coro)
-                    futures[fut] = record
-
-            done, pending = await asyncio.wait(
-                futures.keys(), timeout=self._timeout, return_when=asyncio.FIRST_EXCEPTION
-            )
-
-            # Look for failures
-            for task in done:
-                if r := futures.pop(task, None):
-                    try:
-                        if exc := task.exception():
-                            await self.on_handler_failed(exc, r)
-                    except asyncio.CancelledError:
-                        await self.on_handler_failed(HandlerTaskCancelled(), r)
-
-            # Process timeout tasks
-            for task in pending:
-                if r := futures.pop(task, None):
-                    try:
-                        task.cancel()
-                        await task
-                    except asyncio.CancelledError:
-                        pass
-                    await self.on_handler_timeout(r)
-
-            # Commit first and then call the event subscribers
+        if not batch:
             await self._maybe_commit()
-            for _, records in batch.items():
-                for record in records:
-                    await self.emit("message", record=record)
+            return
 
-            self._processing.release()
+        futures: typing.Dict[asyncio.Future[typing.Any], aiokafka.ConsumerRecord] = dict()
+        await self._processing.acquire()
+
+        for tp, records in batch.items():
+            for record in records:
+                coro = self._handler(record)
+                fut = asyncio.create_task(coro)
+                futures[fut] = record
+
+        done, pending = await asyncio.wait(
+            futures.keys(), timeout=self._timeout, return_when=asyncio.FIRST_EXCEPTION
+        )
+
+        CONSUMED_MESSAGES_BATCH_SIZE.labels(
+            stream_id=self.stream_id,
+            group_id=self.group_id,
+        ).observe(len(futures.keys()))
+
+        # Look for failures
+        for task in done:
+            if r := futures.pop(task, None):
+                try:
+                    if exc := task.exception():
+                        await self.on_handler_failed(exc, r)
+                except asyncio.CancelledError:
+                    await self.on_handler_failed(HandlerTaskCancelled(), r)
+
+        # Process timeout tasks
+        for task in pending:
+            if r := futures.pop(task, None):
+                try:
+                    task.cancel()
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                await self.on_handler_timeout(r)
+
+        # Commit first and then call the event subscribers
+        await self._maybe_commit()
+        for _, records in batch.items():
+            for record in records:
+                await self.emit("message", record=record)
+
+        self._processing.release()
 
     async def _maybe_create_topic(self) -> None:
         # TBD: should we manage this here?
@@ -293,13 +294,13 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         if not await self._app.topic_mng.topic_exists(self.stream_id):
             await self._app.topic_mng.create_topic(topic=self.stream_id)
 
-    async def _maybe_commit(self) -> None:
+    async def _maybe_commit(self, forced: bool = False) -> None:
         if not self._consumer.assignment:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
 
         interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
-        if now := time.monotonic() > (self._last_commit + interval):
+        if forced or (now := time.monotonic() > (self._last_commit + interval)):
             try:
                 await self._consumer.commit()
             except aiokafka.errors.CommitFailedError:
@@ -323,11 +324,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
-        # Wait for the batch to end
-        # TODO: We need to add a timeout and then cancel the batch tasks
         if revoked:
             async with self._processing:
-                return
+                await self._maybe_commit(forced=True)
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
         logger.info(f"Partitions assigned: {assigned}")
@@ -340,9 +339,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             ).inc()
 
     async def on_handler_timeout(self, record: aiokafka.ConsumerRecord) -> None:
-        if self._timeout:
-            slow_topic = f"{self.stream_id}-slow"
-            await self.publish(slow_topic, record)
+        pass
 
     async def on_handler_failed(
         self, exception: BaseException, record: aiokafka.ConsumerRecord
