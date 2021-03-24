@@ -1,6 +1,6 @@
 from .produce import Foo
 from .produce import producer
-from kafkaesk.consumer import ConsumerThread
+from kafkaesk.consumer import BatchConsumer
 
 import asyncio
 import kafkaesk
@@ -19,7 +19,7 @@ async def test_cancel_getone(app):
         pass
 
     async with app:
-        consumer = ConsumerThread(
+        consumer = BatchConsumer(
             stream_id=TOPIC,
             group_id=GROUP,
             coro=handler,

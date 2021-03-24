@@ -1,4 +1,4 @@
-from .consumer import ConsumerThread
+from .consumer import BatchConsumer
 from .consumer import Subscription
 from .exceptions import AppNotConfiguredException
 from .exceptions import ProducerUnhealthyException
@@ -207,7 +207,7 @@ class Application(Router):
         self._topic_prefix = topic_prefix
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
-        self._subscription_consumers: List[ConsumerThread] = []
+        self._subscription_consumers: List[BatchConsumer] = []
         self._subscription_consumers_tasks: List[asyncio.Task] = []
 
         self.auto_commit = auto_commit
@@ -467,7 +467,7 @@ class Application(Router):
                 if consumed >= num_messages:
                     raise StopConsumer
 
-            consumer = ConsumerThread(
+            consumer = BatchConsumer(
                 stream_id=subscription.stream_id,
                 group_id=subscription.group,
                 coro=subscription.func,
@@ -476,7 +476,7 @@ class Application(Router):
                 concurrency=subscription.concurrency or 1,
                 timeout_seconds=subscription.timeout,
             )
-            slow_consumer = ConsumerThread(
+            slow_consumer = BatchConsumer(
                 stream_id=f"{subscription.stream_id}-slow",
                 group_id=subscription.group,
                 coro=subscription.func,
@@ -508,7 +508,7 @@ class Application(Router):
         self._subscription_consumers_tasks = []
 
         for subscription in self._subscriptions:
-            consumer = ConsumerThread(
+            consumer = BatchConsumer(
                 stream_id=subscription.stream_id,
                 group_id=subscription.group,
                 coro=subscription.func,
@@ -516,7 +516,7 @@ class Application(Router):
                 concurrency=subscription.concurrency or 1,
                 timeout_seconds=subscription.timeout,
             )
-            slow_consumer = ConsumerThread(
+            slow_consumer = BatchConsumer(
                 stream_id=f"{subscription.stream_id}-slow",
                 group_id=subscription.group,
                 coro=subscription.func,

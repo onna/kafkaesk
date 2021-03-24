@@ -14,6 +14,7 @@ import logging
 import opentracing
 import orjson
 import pydantic
+import time
 import typing
 
 if typing.TYPE_CHECKING:  # pragma: no cover
@@ -118,7 +119,7 @@ def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable:
     return inner
 
 
-class ConsumerThread(aiokafka.ConsumerRebalanceListener):
+class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     _close: typing.Optional[asyncio.Future]
     _consumer: aiokafka.AIOKafkaConsumer
     _offsets: typing.Dict[aiokafka.TopicPartition, int]
@@ -147,6 +148,7 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         self._close = None
         self._app = app
         self._message_handler = build_handler(coro, app)  # type: ignore
+        self._last_commit = 0
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -295,7 +297,14 @@ class ConsumerThread(aiokafka.ConsumerRebalanceListener):
         if not self._consumer.assignment:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
-        await self._consumer.commit()
+
+        interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
+        if now := time.monotonic() > (self._last_commit + interval):
+            try:
+                await self._consumer.commit()
+            except aiokafka.errors.CommitFailedError:
+                logger.warning("Error attempting to commit", exc_info=True)
+            self._last_commit = now
 
     async def publish(self, stream_id: str, record: aiokafka.ConsumerRecord) -> None:
         # TODO: propagate the headers as well
