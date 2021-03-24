@@ -2,7 +2,7 @@ from kafkaesk import Application
 from functools import partial
 from kafkaesk import Subscription
 from kafkaesk.consumer import build_handler
-from kafkaesk.consumer import ConsumerThread
+from kafkaesk.consumer import BatchConsumer
 from kafkaesk.exceptions import ConsumerUnhealthyException
 from kafkaesk.exceptions import StopConsumer
 from tests.utils import record_factory
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture()
 def subscription():
-    yield ConsumerThread(
+    yield BatchConsumer(
         stream_id="foo",
         group_id="group",
         coro=lambda record: 1,
@@ -115,7 +115,7 @@ class TestSubscriptionConsumer:
     async def test_emit(self):
         probe = AsyncMock()
 
-        sub = ConsumerThread(
+        sub = BatchConsumer(
             stream_id="foo",
             group_id="group",
             coro=lambda record: 1,
@@ -126,7 +126,7 @@ class TestSubscriptionConsumer:
         probe.assert_called_with("foo", "bar")
 
     async def test_emit_raises_stop(self):
-        sub = ConsumerThread(
+        sub = BatchConsumer(
             stream_id="foo",
             group_id="group",
             coro=lambda record: 1,
@@ -138,7 +138,7 @@ class TestSubscriptionConsumer:
             await sub.emit("event", "foo", "bar")
 
     async def test_emit_swallow_ex(self):
-        sub = ConsumerThread(
+        sub = BatchConsumer(
             stream_id="foo",
             group_id="group",
             coro=lambda record: 1,
@@ -149,7 +149,7 @@ class TestSubscriptionConsumer:
         await sub.emit("event", "foo", "bar")
 
     async def test_retries_on_connection_failure(self):
-        sub = ConsumerThread(
+        sub = BatchConsumer(
             stream_id="foo",
             group_id="group",
             coro=lambda record: 1,
@@ -168,7 +168,7 @@ class TestSubscriptionConsumer:
             assert len(run_mock.mock_calls) == 2
 
     async def test_finalize_handles_exceptions(self):
-        sub = ConsumerThread(
+        sub = BatchConsumer(
             stream_id="foo",
             group_id="group",
             coro=lambda record: 1,
@@ -185,7 +185,7 @@ class TestSubscriptionConsumer:
         consumer.stop.assert_called_once()
 
     async def test_run_exits_when_fut_closed_fut(self):
-        sub = ConsumerThread(
+        sub = BatchConsumer(
             stream_id="foo",
             group_id="group",
             coro=lambda record: 1,

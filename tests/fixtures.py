@@ -22,7 +22,10 @@ async def app(kafka, topic_prefix):
     yield kafkaesk.Application(
         [f"{kafka[0]}:{kafka[1]}"],
         topic_prefix=topic_prefix,
-        kafka_settings={"metadata_max_age_ms": 500},
+        kafka_settings={
+            "auto_commit_interval_ms": 0,
+            "metadata_max_age_ms": 500,
+        },
     )
 
 
