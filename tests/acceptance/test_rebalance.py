@@ -131,5 +131,6 @@ async def test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
 
     assert len(consumed) > 100
     # now check that we always consumed a message only once
+
     for v in consumed.values():
         assert v == 1

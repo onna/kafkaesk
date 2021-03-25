@@ -89,7 +89,7 @@ def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable:
     it = iter(sig.parameters.items())
     # first argument is required and its the payload
     next(it)
-    kwargs: typing.Dict[str, typing.Any] = {}
+    kwargs: typing.Dict[str, typing.Any] = getattr(coro, "__extra_kwargs__", {})
 
     for key, param in it:
         if key == "schema":
@@ -148,7 +148,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._close = None
         self._app = app
         self._message_handler = build_handler(coro, app)  # type: ignore
-        self._last_commit = 0
+        self._last_commit = 0.0
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -165,7 +165,10 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                     # We retry
                     await asyncio.sleep(0.5)
         except StopConsumer:
-            logger.info("Consumer stopped, exiting")
+            logger.info(f"Consumer {self} stopped, exiting")
+        except BaseException as exc:
+            logger.exception(f"Consumer {self} failed. Finalizing.", exc_info=exc)
+            raise
         finally:
             await self.finalize()
 
@@ -191,7 +194,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         try:
             await self._consumer.stop()
         except Exception:
-            logger.info("Could not commit on shutdown", exc_info=True)
+            logger.info(f"[{self}] Could not commit on shutdown", exc_info=True)
 
         self._initialized = False
         self._running = False
@@ -325,11 +328,14 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
         if revoked:
+            logger.info(f"Partitions revoked to {self}: {revoked}")
+            # TODO: we dont want to wait forever for this lock, add a timeout and commit anyways.
             async with self._processing:
                 await self._maybe_commit(forced=True)
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
-        logger.info(f"Partitions assigned: {assigned}")
+        if assigned:
+            logger.info(f"Partitions assigned to {self}: {assigned}")
 
         for tp in assigned:
             CONSUMER_REBALANCED.labels(
