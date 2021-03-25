@@ -148,7 +148,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._close = None
         self._app = app
         self._message_handler = build_handler(coro, app)  # type: ignore
-        self._last_commit = 0.0
+        self._last_commit = 0
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -303,7 +303,8 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             return
 
         interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
-        if forced or (now := time.monotonic() > (self._last_commit + interval)):
+        now = time.monotonic_ns()
+        if forced or (now > (self._last_commit + interval)):
             try:
                 await self._consumer.commit()
             except aiokafka.errors.CommitFailedError:
