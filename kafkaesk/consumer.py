@@ -2,8 +2,13 @@ from .exceptions import ConsumerUnhealthyException
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
+from .metrics import CONSUMED_MESSAGE_TIME
+from .metrics import CONSUMED_MESSAGES
 from .metrics import CONSUMED_MESSAGES_BATCH_SIZE
 from .metrics import CONSUMER_REBALANCED
+from .metrics import CONSUMER_TOPIC_OFFSET
+from .metrics import MESSAGE_LEAD_TIME
+from .metrics import NOERROR
 
 import aiokafka
 import asyncio
@@ -255,33 +260,63 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                 fut = asyncio.create_task(coro)
                 futures[fut] = record
 
-        done, pending = await asyncio.wait(
-            futures.keys(), timeout=self._timeout, return_when=asyncio.FIRST_EXCEPTION
-        )
-
-        CONSUMED_MESSAGES_BATCH_SIZE.labels(
+        # TODO: this metric is kept for backwards-compatibility, but should be revisited
+        with CONSUMED_MESSAGE_TIME.labels(
             stream_id=self.stream_id,
+            partition=next(iter(batch)),
             group_id=self.group_id,
-        ).observe(len(futures.keys()))
+        ).time():
+            done, pending = await asyncio.wait(
+                futures.keys(), timeout=self._timeout, return_when=asyncio.FIRST_EXCEPTION
+            )
 
         # Look for failures
         for task in done:
-            if r := futures.pop(task, None):
-                try:
-                    if exc := task.exception():
-                        await self.on_handler_failed(exc, r)
-                except asyncio.CancelledError:
-                    await self.on_handler_failed(HandlerTaskCancelled(), r)
+            record = futures[task]
+
+            try:
+                if exc := task.exception():
+                    self._count_message(record, error=exc.__class__.__name__)
+                    await self.on_handler_failed(exc, record)
+                else:
+                    self._count_message(record)
+            except asyncio.CancelledError:
+                self._count_message(record, error="cancelled")
+                await self.on_handler_failed(HandlerTaskCancelled(), record)
 
         # Process timeout tasks
         for task in pending:
-            if r := futures.pop(task, None):
-                try:
-                    task.cancel()
-                    await task
-                except asyncio.CancelledError:
-                    pass
-                await self.on_handler_timeout(r)
+            record = futures[task]
+
+            try:
+                task.cancel()
+                await task
+            except asyncio.CancelledError:
+                pass
+
+            self._count_message(record, error="pending")
+            await self.on_handler_timeout(record)
+
+        for tp, records in batch.items():
+            CONSUMED_MESSAGES_BATCH_SIZE.labels(
+                stream_id=tp.topic,
+                group_id=self.group_id,
+                partition=tp.partition,
+            ).observe(len(records))
+
+            for record in sorted(records, key=lambda rec: rec.offset):
+                lead_time = time.time() - record.timestamp / 1000  # type: ignore
+                MESSAGE_LEAD_TIME.labels(
+                    stream_id=record.topic,
+                    group_id=self.group_id,
+                    partition=record.partition,
+                ).observe(lead_time)
+
+                CONSUMER_TOPIC_OFFSET.labels(
+                    stream_id=record.topic,
+                    group_id=self.group_id,
+                    partition=record.partition,
+                ).set(record.offset)
 
         # Commit first and then call the event subscribers
         await self._maybe_commit()
@@ -290,6 +325,14 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                 await self.emit("message", record=record)
 
         self._processing.release()
+
+    def _count_message(self, record: aiokafka.ConsumerRecord, error: str = NOERROR) -> None:
+        CONSUMED_MESSAGES.labels(
+            stream_id=record.topic,
+            error=error,
+            partition=record.partition,
+            group_id=self.group_id,
+        ).inc()
 
     async def _maybe_create_topic(self) -> None:
         # TBD: should we manage this here?
