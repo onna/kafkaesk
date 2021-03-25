@@ -89,7 +89,7 @@ async def test_slow_messages(app: Application):
     class Slow(pydantic.BaseModel):
         latency: float
 
-    @app.subscribe("foo.bar", group="test_group", concurrency=10, timeout_seconds=0.035)
+    @app.subscribe("foo.bar", group="test_group", concurrency=10, timeout_seconds=0.045)
     async def consumer(data: Slow, record: aiokafka.ConsumerRecord):
         try:
             await asyncio.sleep(data.latency)
@@ -98,7 +98,7 @@ async def test_slow_messages(app: Application):
             consumed.append(("cancelled", data.latency, record.topic))
 
     async with app:
-        for idx in range(5):
+        for idx in range(10):
             await app.publish("foo.bar", Slow(latency=idx * 0.01))
             await asyncio.sleep(0.01)
         await app.flush()
@@ -106,8 +106,8 @@ async def test_slow_messages(app: Application):
         fut = asyncio.create_task(app.consume_for(num_messages=8, seconds=2))
         await fut
 
-        # Assert here
-        assert True
+        assert len([x for x in consumed if x[0] == "ok"]) == 5
+        assert len([x for x in consumed if x[0] == "cancelled"]) == 5
 
 
 async def test_not_consume_message_that_does_not_match(app):
