@@ -16,6 +16,7 @@ from asyncio.futures import Future
 from functools import partial
 from opentracing.scope_managers.contextvars import ContextVarsScopeManager
 from pydantic import BaseModel
+from types import TracebackType
 from typing import Any
 from typing import Awaitable
 from typing import Callable
@@ -445,7 +446,13 @@ class Application(Router):
         await self.initialize()
         return self
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        logger.warning("Stopping application...", exc_info=exc)
         await self.finalize()
 
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> int:
@@ -508,7 +515,6 @@ class Application(Router):
         return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.FIRST_EXCEPTION)
 
     async def stop(self) -> None:
-        logger.warning("Stopping consumer!!")
         async with self.get_lock("_"):
             # do not allow stop calls at same time
 
