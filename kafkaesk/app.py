@@ -283,6 +283,20 @@ class Application(Router):
     ) -> aiokafka.structs.ConsumerRecord:
         return await (await self.publish(stream_id, data, key, headers=headers))
 
+    async def maybe_create_topic(self, stream_id: str, data: BaseModel) -> None:
+        topic_id = self.topic_mng.get_topic_id(stream_id)
+        async with self.get_lock(stream_id):
+            if not await self.topic_mng.topic_exists(topic_id):
+                reg = self.get_schema_reg(data)
+                retention_ms = None
+                if reg is not None and reg.retention is not None:
+                    retention_ms = reg.retention * 1000
+                await self.topic_mng.create_topic(
+                    topic_id,
+                    replication_factor=self._replication_factor,
+                    retention_ms=retention_ms,
+                )
+
     async def publish(
         self,
         stream_id: str,
@@ -300,19 +314,7 @@ class Application(Router):
             schema_key = f"{data.__class__.__name__}:1"
         data_ = data.dict()
 
-        topic_id = self.topic_mng.get_topic_id(stream_id)
-        async with self.get_lock(stream_id):
-            if not await self.topic_mng.topic_exists(topic_id):
-                reg = self.get_schema_reg(data)
-                retention_ms = None
-                if reg is not None and reg.retention is not None:
-                    retention_ms = reg.retention * 1000
-                await self.topic_mng.create_topic(
-                    topic_id,
-                    replication_factor=self._replication_factor,
-                    retention_ms=retention_ms,
-                )
-
+        await self.maybe_create_topic(stream_id, data)
         return await self.raw_publish(
             stream_id, orjson.dumps({"schema": schema_key, "data": data_}), key, headers=headers
         )
