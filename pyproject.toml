@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kafkaesk"
-version = "0.5.6"
+version = "0.5.7"
 description = "Easy publish and subscribe to events with python and Kafka."
 authors = ["vangheem <vangheem@gmail.com>", "pfreixes <pfreixes@gmail.com>"]
 classifiers = [
@@ -19,7 +19,7 @@ python = "^3.7"
 aiokafka = "^0.7.0"
 kafka-python = "^2.0.1"
 pydantic = "^1.5.1"
-orjson = "3.3.1"
+orjson = "^3.3.1"
 jsonschema = "^3.2.0"
 prometheus_client = "^0.8.0"
 opentracing = "^2.3.0"
