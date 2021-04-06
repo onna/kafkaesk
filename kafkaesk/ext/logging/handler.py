@@ -50,7 +50,7 @@ class PydanticStreamHandler(logging.StreamHandler):
             # log some attributes
             formatted_data = []
             size = 0
-            for field_name in log.fields.keys():
+            for field_name in log.__fields__.keys():
                 val = getattr(log, field_name)
                 formatted = f"{field_name}={val}"
                 size += len(formatted)
