@@ -1,16 +1,5 @@
 [[package]]
 category = "main"
-description = "Jobs scheduler for managing background task (asyncio)."
-name = "aiojobs"
-optional = false
-python-versions = ">=3.5"
-version = "0.3.0"
-
-[package.extras]
-aiohttp = ["aiohttp (>=3.2.0)"]
-
-[[package]]
-category = "main"
 description = "Kafka integration with asyncio."
 name = "aiokafka"
 optional = false
@@ -733,14 +722,10 @@ docs = ["sphinx", "jaraco.packaging (>=8.2)", "rst.linker (>=1.9)"]
 testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "pytest-enabler", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
 [metadata]
-content-hash = "d92cb8a84037e64a436f385d1eed8e27eae3c887037a90bf9ac8915fa26bdb19"
+content-hash = "8abfc6cc1fd4136932fd73aaec6e27ee517459207e1de02cde65f0271112c9a2"
 python-versions = "^3.7"
 
 [metadata.files]
-aiojobs = [
-    {file = "aiojobs-0.3.0-py3-none-any.whl", hash = "sha256:ed49e9ea1be0261fde99305c84691b440f69172016c7b372f9c411dac082a65f"},
-    {file = "aiojobs-0.3.0.tar.gz", hash = "sha256:f6631d42dc4308f7d883abbd70d4e976f3fcc35a3ba1e8eae5d4af4940a1e0c3"},
-]
 aiokafka = [
     {file = "aiokafka-0.7.0-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:915456fc9b7fd2f2f19fb3734b1135aef68aac98a7847bf404a3ea49402696fc"},
     {file = "aiokafka-0.7.0-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:29033fd6007a433d4a1c24504aa8a9b846249ff44691e47964d7892b91236d2f"},
