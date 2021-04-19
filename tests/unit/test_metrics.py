@@ -32,15 +32,11 @@ async def test_record_metric_on_rebalance():
             [TopicPartition(topic="foobar", partition=0)]
         )
         rebalance_metric.labels.assert_called_with(
-            stream_id="foobar",
             partition=0,
             group_id="group",
+            event="assigned",
         )
-        rebalance_metric.labels(
-            stream_id="foobar",
-            partition=0,
-            group_id="group",
-        ).inc.assert_called_once()
+        rebalance_metric.labels().inc.assert_called_once()
 
 
 async def test_record_metric_on_publish():

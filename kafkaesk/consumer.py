@@ -373,6 +373,12 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
         if revoked:
+            for tp in revoked:
+                CONSUMER_REBALANCED.labels(
+                    partition=tp.partition,
+                    group_id=self.group_id,
+                    event="revoked",
+                ).inc()
             logger.info(f"Partitions revoked to {self}: {revoked}")
             # TODO: we dont want to wait forever for this lock, add a timeout and commit anyways.
             async with self._processing:
@@ -384,9 +390,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
         for tp in assigned:
             CONSUMER_REBALANCED.labels(
-                stream_id=tp.topic,
                 partition=tp.partition,
                 group_id=self.group_id,
+                event="assigned",
             ).inc()
 
     async def on_handler_timeout(self, record: aiokafka.ConsumerRecord) -> None:

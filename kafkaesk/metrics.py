@@ -88,7 +88,7 @@ MESSAGE_LEAD_TIME = client.Histogram(
 CONSUMER_REBALANCED = client.Counter(
     "kafkaesk_consumer_rebalanced",
     "Consumer rebalances",
-    ["stream_id", "group_id", "partition"],
+    ["group_id", "partition", "event"],
 )
 
 
