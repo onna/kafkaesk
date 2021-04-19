@@ -66,32 +66,6 @@ class TestMessageHandler:
 
 
 class TestSubscriptionConsumer:
-    async def notest_maybe_commit(self, subscription):
-        subscription._consumer = AsyncMock()
-        subscription._needs_commit = True
-        subscription._last_commit = -10  # monotonic
-        await subscription._maybe_commit()
-        subscription.consumer.commit.assert_called_once()
-
-    async def no_test_maybe_commit_on_message_timeout(self, subscription):
-        subscription._consumer = AsyncMock()
-        subscription._consumer.getone = partial(asyncio.sleep, 1)
-        subscription._running = subscription._needs_commit = True
-        subscription._last_commit = -10  # monotonic
-        maybe_commit = AsyncMock()
-        with patch.object(subscription, "_maybe_commit", maybe_commit):
-            asyncio.create_task(subscription.stop())
-            await subscription._run()
-        maybe_commit.assert_called_once()
-
-    async def notest_maybe_commit_handles_commit_failure(self, subscription):
-        subscription._consumer = AsyncMock()
-        subscription._consumer.commit.side_effect = aiokafka.errors.CommitFailedError
-        subscription._last_commit = -10  # monotonic
-        subscription._needs_commit = True
-        await subscription._maybe_commit()
-        subscription.consumer.commit.assert_called_once()
-
     async def test_healthy(self, subscription):
         subscription._consumer = MagicMock()
         subscription._running = True

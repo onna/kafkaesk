@@ -281,6 +281,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                 else:
                     self._count_message(record)
             except asyncio.CancelledError:
+                # During task execution any exception will be returned in
+                # the `done` list. But timeout exception should be captured
+                # independendly, thats why we handle this condition here.
                 self._count_message(record, error="cancelled")
                 await self.on_handler_failed(HandlerTaskCancelled(), record)
 

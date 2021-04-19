@@ -284,7 +284,7 @@ class Application(Router):
     ) -> aiokafka.structs.ConsumerRecord:
         return await (await self.publish(stream_id, data, key, headers=headers))
 
-    async def maybe_create_topic(self, stream_id: str, data: BaseModel = None) -> None:
+    async def _maybe_create_topic(self, stream_id: str, data: BaseModel = None) -> None:
         topic_id = self.topic_mng.get_topic_id(stream_id)
         async with self.get_lock(stream_id):
             if not await self.topic_mng.topic_exists(topic_id):
@@ -317,7 +317,7 @@ class Application(Router):
             schema_key = f"{data.__class__.__name__}:1"
         data_ = data.dict()
 
-        await self.maybe_create_topic(stream_id, data)
+        await self._maybe_create_topic(stream_id, data)
         return await self.raw_publish(
             stream_id, orjson.dumps({"schema": schema_key, "data": data_}), key, headers=headers
         )
@@ -459,7 +459,7 @@ class Application(Router):
         exc: Optional[BaseException],
         traceback: Optional[TracebackType],
     ) -> None:
-        logger.warning("Stopping application...", exc_info=exc)
+        logger.info("Stopping application...", exc_info=exc)
         await self.finalize()
 
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> int:
