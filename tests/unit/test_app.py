@@ -227,7 +227,7 @@ class TestApplication:
         app._topic_mng.get_topic_id.return_value = "foobar"
         app._topic_mng.topic_exists = AsyncMock(return_value=True)
 
-        await app.publish("foobar", Foo(bar="foo"), headers={"foo": b"bar"})
+        await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
         producer.send.assert_called_with(
             "foobar",
             value=b'{"schema":"Foo:1","data":{"bar":"foo"}}',
@@ -249,7 +249,7 @@ class TestApplication:
         app._topic_mng.topic_exists = AsyncMock(return_value=False)
         app._topic_mng.create_topic = AsyncMock()
 
-        await app.publish("foobar", Foo(bar="foo"), headers={"foo": b"bar"})
+        await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
         app._topic_mng.create_topic.assert_called_with(
             "foobar", replication_factor=None, retention_ms=100 * 1000
         )

@@ -355,8 +355,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             self._last_commit = now
 
     async def publish(self, stream_id: str, record: aiokafka.ConsumerRecord) -> None:
-        # TODO: propagate the headers as well
-        fut = await self._app.raw_publish(stream_id=stream_id, data=record.value, key=record.key)
+        fut = await self._app.raw_publish(
+            stream_id=stream_id, data=record.value, key=record.key, headers=record.headers
+        )
         await fut
 
     async def healthy(self) -> None:

@@ -24,6 +24,7 @@ from typing import cast
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 from typing import Type
 
 import aiokafka
@@ -279,7 +280,7 @@ class Application(Router):
         stream_id: str,
         data: BaseModel,
         key: Optional[bytes] = None,
-        headers: Optional[Dict[str, bytes]] = None,
+        headers: Optional[List[Tuple[str, bytes]]] = None,
     ) -> aiokafka.structs.ConsumerRecord:
         return await (await self.publish(stream_id, data, key, headers=headers))
 
@@ -304,7 +305,7 @@ class Application(Router):
         stream_id: str,
         data: BaseModel,
         key: Optional[bytes] = None,
-        headers: Optional[Dict[str, bytes]] = None,
+        headers: Optional[List[Tuple[str, bytes]]] = None,
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         if not self._initialized:
             async with self.get_lock("_"):
@@ -326,14 +327,16 @@ class Application(Router):
         stream_id: str,
         data: bytes,
         key: Optional[bytes] = None,
-        headers: Optional[Dict[str, bytes]] = None,
+        headers: Optional[List[Tuple[str, bytes]]] = None,
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         logger.debug(f"Sending kafka msg: {stream_id}")
         producer = await self._get_producer()
         tracer = opentracing.tracer
 
         if headers is None:
-            headers = {}
+            headers_unique = {}
+        else:
+            headers_unique = {k: v for k, v in headers}
 
         if isinstance(tracer.scope_manager, ContextVarsScopeManager):
             # This only makes sense if the context manager is asyncio aware
@@ -344,7 +347,7 @@ class Application(Router):
                     format=opentracing.Format.TEXT_MAP,
                     carrier=carrier,
                 )
-                headers.update({k: v.encode() for k, v in carrier.items()})
+                headers_unique.update({k: v.encode() for k, v in carrier.items()})
 
         if not self.producer_healthy():
             raise ProducerUnhealthyException(self._producer)  # type: ignore
@@ -356,7 +359,7 @@ class Application(Router):
                 topic_id,
                 value=data,
                 key=key,
-                headers=[(k, v) for k, v in headers.items()],
+                headers=[(k, v) for k, v in headers_unique.items()],
             )
 
         fut.add_done_callback(partial(published_callback, topic_id, start_time))  # type: ignore
