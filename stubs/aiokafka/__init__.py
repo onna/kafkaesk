@@ -1,4 +1,5 @@
 from asyncio.events import AbstractEventLoop
+from collections import namedtuple
 from kafka.structs import ConsumerRecord
 from kafka.structs import TopicPartition
 from typing import Any
@@ -78,6 +79,7 @@ class AIOKafkaConsumer:
     _client: AIOKafkaClient
     _coordinator: GroupCoordinator
     _subscription: Subscription
+    _group_id: Optional[str]
 
     def __init__(
         self,
@@ -124,7 +126,9 @@ class AIOKafkaConsumer:
     def assignment(self) -> Set[TopicPartition]:
         ...
 
-    async def getmany(self, timeout_ms: int) -> Dict[TopicPartition, List[ConsumerRecord]]:
+    async def getmany(
+        self, *partitions: TopicPartition, timeout_ms: int = 0, max_records: int = None
+    ) -> Dict[TopicPartition, List[ConsumerRecord]]:
         ...
 
 
@@ -134,3 +138,10 @@ class ConsumerRebalanceListener:
 
     async def on_partitions_assigned(self, assigned: List[TopicPartition]) -> None:
         ...
+
+
+OffsetAndMetadata = namedtuple(
+    "OffsetAndMetadata",
+    # TODO add leaderEpoch: OffsetAndMetadata(offset, leaderEpoch, metadata)
+    ["offset", "metadata"],
+)

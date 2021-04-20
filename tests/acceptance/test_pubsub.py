@@ -1,7 +1,7 @@
 from aiokafka import ConsumerRecord
+from kafkaesk import Application
 from kafkaesk.exceptions import ProducerUnhealthyException
 from kafkaesk.kafka import KafkaTopicManager
-from kafkaesk.retry import Forward
 from unittest.mock import call
 from unittest.mock import MagicMock
 from unittest.mock import Mock
@@ -35,7 +35,7 @@ async def test_data_binding(app):
     async with app:
         await app.publish_and_wait("foo.bar", Foo(bar="1"))
         await app.flush()
-        await app.consume_for(1, seconds=5)
+        await app.consume_for(1, seconds=10)
 
     assert len(consumed) == 1
     assert len(consumed[0]) == 4
@@ -55,7 +55,7 @@ async def test_consume_message(app):
     async with app:
         await app.publish_and_wait("foo.bar", Foo(bar="1"))
         await app.flush()
-        await app.consume_for(1, seconds=5)
+        await app.consume_for(1, seconds=10)
 
     assert len(consumed) == 1
 
@@ -72,14 +72,42 @@ async def test_consume_many_messages(app):
         consumed.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(1000, seconds=5))
+        fut = asyncio.create_task(app.consume_for(10, seconds=10))
         await asyncio.sleep(0.1)
-        for idx in range(1000):
+        for idx in range(10):
             await app.publish("foo.bar", Foo(bar=str(idx)))
         await app.flush()
         await fut
 
-    assert len(consumed) == 1000
+    assert len(consumed) == 10
+
+
+async def test_slow_messages(app: Application):
+    consumed = []
+
+    @app.schema("Slow", streams=["foo.bar"])
+    class Slow(pydantic.BaseModel):
+        latency: float
+
+    @app.subscribe("foo.bar", group="test_group", concurrency=10, timeout_seconds=0.045)
+    async def consumer(data: Slow, record: aiokafka.ConsumerRecord):
+        try:
+            await asyncio.sleep(data.latency)
+            consumed.append(("ok", data.latency, record.topic))
+        except asyncio.CancelledError:
+            consumed.append(("cancelled", data.latency, record.topic))
+
+    async with app:
+        for idx in range(10):
+            await app.publish("foo.bar", Slow(latency=idx * 0.01))
+            await asyncio.sleep(0.01)
+        await app.flush()
+
+        fut = asyncio.create_task(app.consume_for(num_messages=8, seconds=2))
+        await fut
+
+        assert len([x for x in consumed if x[0] == "ok"]) == 5
+        assert len([x for x in consumed if x[0] == "cancelled"]) == 5
 
 
 async def test_not_consume_message_that_does_not_match(app):
@@ -96,7 +124,7 @@ async def test_not_consume_message_that_does_not_match(app):
     async with app:
         await app.publish("foo.bar1", Foo(bar="1"))
         await app.flush()
-        await app.consume_for(1, seconds=1)
+        await app.consume_for(1, seconds=5)
 
     assert len(consumed) == 0
 
@@ -129,7 +157,6 @@ async def test_multiple_subscribers_different_models(app):
     @app.subscribe(
         "foo.bar",
         group="test_group",
-        retry_handlers={Exception: Forward("test_group__foo.bar__Exception")},
     )
     async def consume1(data: Foo1):
         consumed1.append(data)
@@ -137,13 +164,12 @@ async def test_multiple_subscribers_different_models(app):
     @app.subscribe(
         "foo.bar",
         group="test_group_2",
-        retry_handlers={Exception: Forward("test_group__foo.bar__Exception")},
     )
     async def consume2(data: Foo2):
         consumed2.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(4, seconds=5))
+        fut = asyncio.create_task(app.consume_for(4, seconds=10))
         await asyncio.sleep(0.2)
 
         await app.publish("foo.bar", Foo1(bar="1"))
@@ -174,7 +200,7 @@ async def test_subscribe_diff_data_types(app):
     async with app:
         await app.publish("foo.bar", Foo(bar="1"))
         await app.flush()
-        await app.consume_for(1, seconds=5)
+        await app.consume_for(1, seconds=10)
 
     assert len(consumed_records) == 1
     assert len(consumed_bytes) == 1
@@ -194,13 +220,11 @@ async def test_subscribe_to_topic_that_does_not_exist(app):
         consumed_records.append(data)
 
     async with app:
-        fut = asyncio.create_task(app.consume_for(10, seconds=5))
-        await asyncio.sleep(0.5)
-
         for idx in range(10):
             await app.publish("foo.bar", Foo(bar=str(idx)))
 
         await app.flush()
+        fut = asyncio.create_task(app.consume_for(10, seconds=10))
         await fut
 
     assert len(consumed_records) == 10
@@ -222,7 +246,7 @@ async def test_subscribe_to_topic_that_already_has_messages_for_group(app):
             await app.publish("foo.bar", Foo(bar=str(idx)))
         await app.flush()
 
-        fut = asyncio.create_task(app.consume_for(20, seconds=5))
+        fut = asyncio.create_task(app.consume_for(20, seconds=10))
 
         for idx in range(10):
             await app.publish("foo.bar", Foo(bar=str(idx)))
@@ -242,53 +266,6 @@ async def test_cache_topic_exists_topic_mng(kafka):
 
     await mng.create_topic(topic_id)
     assert await mng.topic_exists(topic_id)
-
-
-async def test_subscription_creates_retry_policy(app):
-    @app.schema("Foo", version=1)
-    class Foo(pydantic.BaseModel):
-        bar: str
-
-    @app.subscribe("foo.bar", group="test_group")
-    async def noop(data: Foo):
-        ...
-
-    policy_mock = Mock(return_value=AsyncMock())
-    factory_mock = Mock(return_value=policy_mock)
-    with patch("kafkaesk.subscription.RetryPolicy", new_callable=factory_mock):
-        async with app:
-            fut = asyncio.create_task(app.consume_for(1, seconds=5))
-            await asyncio.sleep(0.2)
-
-            await app.publish("foo.bar", Foo(bar=1))
-            await app.flush()
-            await fut
-
-        policy_mock.assert_called_once()
-        policy_mock.return_value.initialize.assert_awaited_once()
-        policy_mock.return_value.finalize.assert_awaited_once()
-
-
-async def test_subscription_calls_retry_policy(app):
-    handler_mock = AsyncMock()
-
-    @app.schema("Foo", version=1)
-    class Foo(pydantic.BaseModel):
-        bar: str
-
-    @app.subscribe("foo.bar", group="test_group", retry_handlers={Exception: handler_mock})
-    async def noop(data: Foo):
-        raise Exception("Unhandled Exception")
-
-    async with app:
-        fut = asyncio.create_task(app.consume_for(1, seconds=5))
-        await asyncio.sleep(0.2)
-
-        await app.publish("foo.bar", Foo(bar=1))
-        await app.flush()
-        await fut
-
-    handler_mock.assert_awaited_once()
 
 
 async def test_subscription_failure(app):
@@ -313,19 +290,15 @@ async def test_subscription_failure(app):
 
         # it fails
         with pytest.raises(Exception):
-            await app.consume_for(2, seconds=5)
+            await app.consume_for(2, seconds=20)
 
         # verify we didn't commit
-        # self.topic_mng.get_topic_id(stream_id)
-        assert not any(
-            [
-                tp.topic == topic_id
-                for tp in (await app.topic_mng.list_consumer_group_offsets(group_id)).keys()
-            ]
-        )
-
-    # After the first failure consumer hard fails
-    assert len(probe.mock_calls) == 1
+        offsets = [
+            v
+            for k, v in (await app.topic_mng.list_consumer_group_offsets(group_id)).items()
+            if k.topic == topic_id
+        ]
+        assert offsets == []
 
     # remove wrong consumer
     app._subscriptions = []
@@ -338,7 +311,7 @@ async def test_subscription_failure(app):
         await app.publish(stream_id, Foo(bar=2))
         await app.flush()
 
-        await app.consume_for(3, seconds=3)
+        await app.consume_for(3, seconds=10)
 
         # make sure we that now committed all messages
         assert (
@@ -358,9 +331,6 @@ async def test_subscription_failure(app):
         [call("error", Foo(bar="1")), call("ok", Foo(bar="1")), call("ok", Foo(bar="2"))],
         any_order=True,
     )
-
-    # 1 failed + 3 ok
-    assert len(probe.mock_calls) == 4
 
 
 async def test_publish_unregistered_schema(app):

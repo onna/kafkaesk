@@ -1,3 +1,5 @@
+from .consumer import BatchConsumer
+from .consumer import Subscription
 from .exceptions import AppNotConfiguredException
 from .exceptions import ProducerUnhealthyException
 from .exceptions import SchemaConflictException
@@ -9,14 +11,12 @@ from .metrics import PUBLISHED_MESSAGES
 from .metrics import PUBLISHED_MESSAGES_TIME
 from .metrics import watch_kafka
 from .metrics import watch_publish
-from .retry import RetryHandler
-from .subscription import Subscription
-from .subscription import SubscriptionConsumer
 from .utils import resolve_dotted_name
 from asyncio.futures import Future
 from functools import partial
 from opentracing.scope_managers.contextvars import ContextVarsScopeManager
 from pydantic import BaseModel
+from types import TracebackType
 from typing import Any
 from typing import Awaitable
 from typing import Callable
@@ -24,6 +24,7 @@ from typing import cast
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 from typing import Type
 
 import aiokafka
@@ -137,11 +138,16 @@ class Router:
         stream_id: str,
         group: str,
         *,
-        retry_handlers: Optional[Dict[Type[Exception], RetryHandler]] = None,
+        timeout_seconds: float = 5,
+        concurrency: int = None,
     ) -> Callable:
         def inner(func: Callable) -> Callable:
             subscription = Subscription(
-                stream_id, func, group or func.__name__, retry_handlers=retry_handlers
+                stream_id,
+                func,
+                group or func.__name__,
+                concurrency=concurrency,
+                timeout_seconds=timeout_seconds,
             )
             self._subscriptions.append(subscription)
             return func
@@ -203,7 +209,7 @@ class Application(Router):
         self._topic_prefix = topic_prefix
         self._replication_factor = replication_factor
         self._topic_mng: Optional[KafkaTopicManager] = None
-        self._subscription_consumers: List[SubscriptionConsumer] = []
+        self._subscription_consumers: List[BatchConsumer] = []
         self._subscription_consumers_tasks: List[asyncio.Task] = []
 
         self.auto_commit = auto_commit
@@ -274,16 +280,32 @@ class Application(Router):
         stream_id: str,
         data: BaseModel,
         key: Optional[bytes] = None,
-        headers: Optional[Dict[str, bytes]] = None,
+        headers: Optional[List[Tuple[str, bytes]]] = None,
     ) -> aiokafka.structs.ConsumerRecord:
         return await (await self.publish(stream_id, data, key, headers=headers))
+
+    async def _maybe_create_topic(self, stream_id: str, data: BaseModel = None) -> None:
+        topic_id = self.topic_mng.get_topic_id(stream_id)
+        async with self.get_lock(stream_id):
+            if not await self.topic_mng.topic_exists(topic_id):
+                reg = None
+                if data:
+                    reg = self.get_schema_reg(data)
+                retention_ms = None
+                if reg is not None and reg.retention is not None:
+                    retention_ms = reg.retention * 1000
+                await self.topic_mng.create_topic(
+                    topic_id,
+                    replication_factor=self._replication_factor,
+                    retention_ms=retention_ms,
+                )
 
     async def publish(
         self,
         stream_id: str,
         data: BaseModel,
         key: Optional[bytes] = None,
-        headers: Optional[Dict[str, bytes]] = None,
+        headers: Optional[List[Tuple[str, bytes]]] = None,
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         if not self._initialized:
             async with self.get_lock("_"):
@@ -295,19 +317,7 @@ class Application(Router):
             schema_key = f"{data.__class__.__name__}:1"
         data_ = data.dict()
 
-        topic_id = self.topic_mng.get_topic_id(stream_id)
-        async with self.get_lock(stream_id):
-            if not await self.topic_mng.topic_exists(topic_id):
-                reg = self.get_schema_reg(data)
-                retention_ms = None
-                if reg is not None and reg.retention is not None:
-                    retention_ms = reg.retention * 1000
-                await self.topic_mng.create_topic(
-                    topic_id,
-                    replication_factor=self._replication_factor,
-                    retention_ms=retention_ms,
-                )
-
+        await self._maybe_create_topic(stream_id, data)
         return await self.raw_publish(
             stream_id, orjson.dumps({"schema": schema_key, "data": data_}), key, headers=headers
         )
@@ -317,14 +327,14 @@ class Application(Router):
         stream_id: str,
         data: bytes,
         key: Optional[bytes] = None,
-        headers: Optional[Dict[str, bytes]] = None,
+        headers: Optional[List[Tuple[str, bytes]]] = None,
     ) -> Awaitable[aiokafka.structs.ConsumerRecord]:
         logger.debug(f"Sending kafka msg: {stream_id}")
         producer = await self._get_producer()
         tracer = opentracing.tracer
 
-        if headers is None:
-            headers = {}
+        if not headers:
+            headers = []
 
         if isinstance(tracer.scope_manager, ContextVarsScopeManager):
             # This only makes sense if the context manager is asyncio aware
@@ -335,7 +345,11 @@ class Application(Router):
                     format=opentracing.Format.TEXT_MAP,
                     carrier=carrier,
                 )
-                headers.update({k: v.encode() for k, v in carrier.items()})
+                header_keys = [k for k, _ in headers]
+                for k, v in carrier.items():
+                    # Dont overwrite if they are already present!
+                    if k not in header_keys:
+                        headers.append((k, v.encode()))
 
         if not self.producer_healthy():
             raise ProducerUnhealthyException(self._producer)  # type: ignore
@@ -347,7 +361,7 @@ class Application(Router):
                 topic_id,
                 value=data,
                 key=key,
-                headers=[(k, v) for k, v in headers.items()],
+                headers=headers,
             )
 
         fut.add_done_callback(partial(published_callback, topic_id, start_time))  # type: ignore
@@ -377,6 +391,7 @@ class Application(Router):
             bootstrap_servers=cast(List[str], self._kafka_servers),
             loop=asyncio.get_event_loop(),
             group_id=group_id,
+            auto_offset_reset="earliest",
             api_version=self._kafka_api_version,
             enable_auto_commit=False,
             **{k: v for k, v in self.kafka_settings.items() if k in _aiokafka_consumer_settings},
@@ -440,14 +455,20 @@ class Application(Router):
         await self.initialize()
         return self
 
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        logger.info("Stopping application...", exc_info=exc)
         await self.finalize()
 
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> int:
-
         consumed = 0
 
         self._subscription_consumers = []
+        tasks = []
         for subscription in self._subscriptions:
 
             async def on_message(record: aiokafka.structs.ConsumerRecord) -> None:
@@ -456,13 +477,21 @@ class Application(Router):
                 if consumed >= num_messages:
                     raise StopConsumer
 
-            consumer = SubscriptionConsumer(
-                self, subscription, event_handlers={"message": [on_message]}
+            consumer = BatchConsumer(
+                stream_id=subscription.stream_id,
+                group_id=subscription.group,
+                coro=subscription.func,
+                app=self,
+                event_handlers={"message": [on_message]},
+                concurrency=subscription.concurrency or 1,
+                timeout_seconds=subscription.timeout,
             )
+
             self._subscription_consumers.append(consumer)
+            tasks.append(asyncio.create_task(consumer(), name=str(consumer)))
 
         done, pending = await asyncio.wait(
-            [asyncio.create_task(c()) for c in self._subscription_consumers], timeout=seconds
+            tasks, timeout=seconds, return_when=asyncio.FIRST_EXCEPTION
         )
         await self.stop()
 
@@ -479,13 +508,20 @@ class Application(Router):
         self._subscription_consumers_tasks = []
 
         for subscription in self._subscriptions:
-            consumer = SubscriptionConsumer(self, subscription)
+            consumer = BatchConsumer(
+                stream_id=subscription.stream_id,
+                group_id=subscription.group,
+                coro=subscription.func,
+                app=self,
+                concurrency=subscription.concurrency or 1,
+                timeout_seconds=subscription.timeout,
+            )
             self._subscription_consumers.append(consumer)
 
         self._subscription_consumers_tasks = [
             asyncio.create_task(c()) for c in self._subscription_consumers
         ]
-        return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.ALL_COMPLETED)
+        return asyncio.wait(self._subscription_consumers_tasks, return_when=asyncio.FIRST_EXCEPTION)
 
     async def stop(self) -> None:
         async with self.get_lock("_"):
@@ -557,7 +593,6 @@ def run(app: Optional[Application] = None) -> None:
             app.configure(api_version=opts.api_version)
 
     try:
-        print(f"Running kafkaesk consumer {app}")
         asyncio.run(run_app(app))
     except asyncio.CancelledError:  # pragma: no cover
         logger.debug("Closing because task was exited")

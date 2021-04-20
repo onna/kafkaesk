@@ -1,6 +1,6 @@
 from .produce import Foo
 from .produce import producer
-from kafkaesk.subscription import SubscriptionConsumer
+from kafkaesk.consumer import BatchConsumer
 
 import asyncio
 import kafkaesk
@@ -15,14 +15,20 @@ async def test_cancel_getone(app):
 
     app.schema(streams=[TOPIC])(Foo)
 
-    @app.subscribe(TOPIC, group=GROUP)
-    async def consumer(ob: Foo, record, app):
-        ...
+    async def handler(*args, **kwargs):
+        pass
 
     async with app:
-        sub_consumer = SubscriptionConsumer(app, app.subscriptions[0])
-        await sub_consumer.initialize()
-        raw_consumer = sub_consumer.consumer
+        consumer = BatchConsumer(
+            stream_id=TOPIC,
+            group_id=GROUP,
+            coro=handler,
+            app=app,
+            concurrency=1,
+            timeout_seconds=1,
+        )
+        await consumer.initialize()
+        raw_consumer = consumer._consumer
         with raw_consumer._subscription.fetch_context():
             try:
                 await asyncio.wait_for(raw_consumer._fetcher.next_record([]), timeout=0.1)
@@ -71,7 +77,7 @@ async def test_many_consumers_rebalancing(kafka, topic_prefix):
         await apps[idx].stop()
 
 
-async def _test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
+async def test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
     """
     No matter what, even without reassignment, some messages
     seem to be relayed. You can see if when a single consumer and no rebalance
@@ -125,5 +131,6 @@ async def _test_consume_every_message_once_during_rebalance(kafka, topic_prefix)
 
     assert len(consumed) > 100
     # now check that we always consumed a message only once
+
     for v in consumed.values():
         assert v == 1

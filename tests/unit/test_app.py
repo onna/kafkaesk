@@ -105,8 +105,11 @@ class TestApplication:
 
     async def test_consumer_health_check_raises_exception(self):
         app = kafkaesk.Application()
-        subscription_consumer = kafkaesk.SubscriptionConsumer(
-            app, kafkaesk.Subscription("foo", lambda: 1, "group")
+        subscription_consumer = kafkaesk.BatchConsumer(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=app,
         )
         app._subscription_consumers.append(subscription_consumer)
         subscription_consumer._consumer = AsyncMock()
@@ -171,6 +174,7 @@ class TestApplication:
                 loop=ANY,
                 group_id="foobar",
                 api_version="auto",
+                auto_offset_reset="earliest",
                 enable_auto_commit=False,
                 max_partition_fetch_bytes=100,
                 fetch_max_wait_ms=100,
@@ -223,7 +227,7 @@ class TestApplication:
         app._topic_mng.get_topic_id.return_value = "foobar"
         app._topic_mng.topic_exists = AsyncMock(return_value=True)
 
-        await app.publish("foobar", Foo(bar="foo"), headers={"foo": b"bar"})
+        await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
         producer.send.assert_called_with(
             "foobar",
             value=b'{"schema":"Foo:1","data":{"bar":"foo"}}',
@@ -245,7 +249,7 @@ class TestApplication:
         app._topic_mng.topic_exists = AsyncMock(return_value=False)
         app._topic_mng.create_topic = AsyncMock()
 
-        await app.publish("foobar", Foo(bar="foo"), headers={"foo": b"bar"})
+        await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
         app._topic_mng.create_topic.assert_called_with(
             "foobar", replication_factor=None, retention_ms=100 * 1000
         )
