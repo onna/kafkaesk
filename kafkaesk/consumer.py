@@ -372,9 +372,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         record: aiokafka.ConsumerRecord,
         headers: typing.Optional[typing.List[typing.Tuple[str, bytes]]] = None,
     ) -> None:
-        if not headers:
-            headers = []
-        record_headers = list(record.headers) + headers
+        record_headers = (record.headers or []) + (headers or [])
 
         fut = await self._app.raw_publish(
             stream_id=stream_id, data=record.value, key=record.key, headers=record_headers

@@ -36,7 +36,7 @@ def test_subscription_repr():
 
 class TestMessageHandler:
     def factory(self, func):
-        return build_handler(func, app=MagicMock())
+        return build_handler(func, app=MagicMock(), consumer=None)
 
     async def test_message_handler(self):
         side_effect = None

@@ -25,13 +25,13 @@ class Foobar(BaseModel):
 
 async def consumer_logic(data: Foobar, record, subscriber):
     try:
-        print(f"{data}: waiting {data.timeout}s...")
+        print(f"{data} -- {record.headers}: waiting {data.timeout}s...")
         await asyncio.sleep(data.timeout)
         print(f"{data}: done...")
     except asyncio.CancelledError:
         # Slow topic
         print(f"{data} timeout message, sending to slow topic...")
-        await subscriber.publish(f"slow.{record.topic}", record)
+        await subscriber.publish(f"slow.{record.topic}", record, headers=[("slow", b"true")])
     except Exception:
         await subscriber.publish(f"failed.{record.topic}", record)
 
