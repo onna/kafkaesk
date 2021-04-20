@@ -33,7 +33,8 @@ class StopConsumer(Exception):
 
 
 class HandlerTaskCancelled(Exception):
-    ...
+    def __init__(self, record: aiokafka.ConsumerRecord):
+        self.record = record
 
 
 class ConsumerUnhealthyException(Exception):

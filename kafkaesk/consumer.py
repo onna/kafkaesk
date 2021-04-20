@@ -77,7 +77,9 @@ def _record_msg_handler(record: aiokafka.structs.ConsumerRecord) -> aiokafka.str
     return record
 
 
-def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable:
+def build_handler(
+    coro: typing.Callable, app: "Application", consumer: "BatchConsumer"
+) -> typing.Callable:
     """Introspection on the coroutine signature to inject dependencies"""
     sig = inspect.signature(coro)
     param_name = [k for k in sig.parameters.keys()][0]
@@ -103,6 +105,8 @@ def build_handler(coro: typing.Callable, app: "Application") -> typing.Callable:
             kwargs["record"] = None
         elif key == "app":
             kwargs["app"] = app
+        elif key == "subscriber":
+            kwargs["subscriber"] = consumer
         elif issubclass(param.annotation, opentracing.Span):
             kwargs[key] = opentracing.Span
 
@@ -147,12 +151,10 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self.group_id = group_id
         self._coro = coro
         self._event_handlers = event_handlers or {}
-        # By default "1". Analog to the sequential version
         self._concurrency = concurrency
         self._timeout = timeout_seconds
         self._close = None
         self._app = app
-        self._message_handler = build_handler(coro, app)  # type: ignore
         self._last_commit = 0
 
     async def __call__(self) -> None:
@@ -193,6 +195,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         await self._maybe_create_topic()
         self._consumer = await self._consumer_factory()
         await self._consumer.start()
+        self._message_handler = build_handler(self._coro, self._app, self)  # type: ignore
         self._initialized = True
 
     async def finalize(self) -> None:
@@ -285,20 +288,22 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                 # the `done` list. But timeout exception should be captured
                 # independendly, thats why we handle this condition here.
                 self._count_message(record, error="cancelled")
-                await self.on_handler_failed(HandlerTaskCancelled(), record)
+                await self.on_handler_failed(HandlerTaskCancelled(record), record)
 
         # Process timeout tasks
         for task in pending:
             record = futures[task]
 
             try:
+                # This will raise a `asyncio.CancelledError`, the consumer logic
+                # is responsible to catch it.
                 task.cancel()
                 await task
             except asyncio.CancelledError:
-                pass
+                # App didnt catch this exception, so we treat it as an unmanaged one.
+                await self.on_handler_timeout(record)
 
             self._count_message(record, error="pending")
-            await self.on_handler_timeout(record)
 
         for tp, records in batch.items():
             CONSUMED_MESSAGES_BATCH_SIZE.labels(
@@ -337,6 +342,10 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             group_id=self.group_id,
         ).inc()
 
+    @property
+    def consumer(self) -> aiokafka.AIOKafkaConsumer:
+        return self._consumer
+
     async def _maybe_create_topic(self) -> None:
         # TBD: should we manage this here?
         return
@@ -357,9 +366,18 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                 logger.warning("Error attempting to commit", exc_info=True)
             self._last_commit = now
 
-    async def publish(self, stream_id: str, record: aiokafka.ConsumerRecord) -> None:
+    async def publish(
+        self,
+        stream_id: str,
+        record: aiokafka.ConsumerRecord,
+        headers: typing.Optional[typing.List[typing.Tuple[str, bytes]]] = None,
+    ) -> None:
+        if not headers:
+            headers = []
+        record_headers = list(record.headers) + headers
+
         fut = await self._app.raw_publish(
-            stream_id=stream_id, data=record.value, key=record.key, headers=record.headers
+            stream_id=stream_id, data=record.value, key=record.key, headers=record_headers
         )
         await fut
 
@@ -399,7 +417,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             ).inc()
 
     async def on_handler_timeout(self, record: aiokafka.ConsumerRecord) -> None:
-        pass
+        raise HandlerTaskCancelled(record)
 
     async def on_handler_failed(
         self, exception: BaseException, record: aiokafka.ConsumerRecord

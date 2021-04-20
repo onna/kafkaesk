@@ -333,10 +333,8 @@ class Application(Router):
         producer = await self._get_producer()
         tracer = opentracing.tracer
 
-        if headers is None:
-            headers_unique = {}
-        else:
-            headers_unique = {k: v for k, v in headers}
+        if not headers:
+            headers = []
 
         if isinstance(tracer.scope_manager, ContextVarsScopeManager):
             # This only makes sense if the context manager is asyncio aware
@@ -347,7 +345,11 @@ class Application(Router):
                     format=opentracing.Format.TEXT_MAP,
                     carrier=carrier,
                 )
-                headers_unique.update({k: v.encode() for k, v in carrier.items()})
+                header_keys = [k for k, _ in headers]
+                for k, v in carrier.items():
+                    # Dont overwrite if they are already present!
+                    if k not in header_keys:
+                        headers.append((k, v.encode()))
 
         if not self.producer_healthy():
             raise ProducerUnhealthyException(self._producer)  # type: ignore
@@ -359,7 +361,7 @@ class Application(Router):
                 topic_id,
                 value=data,
                 key=key,
-                headers=[(k, v) for k, v in headers_unique.items()],
+                headers=headers,
             )
 
         fut.add_done_callback(partial(published_callback, topic_id, start_time))  # type: ignore

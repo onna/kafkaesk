@@ -34,6 +34,28 @@ async def foobar():
     await app.publish("content.edited.Resource", data=ContentMessage(foo="bar"))
 ```
 
+A convenience method is available in the `subscriber` dependency instance, this allow to header
+propagation from the consumed message.
+
+```python
+import kafkaesk
+from pydantic import BaseModel
+
+app = kafkaesk.Application()
+
+@app.schema("Content", version=1, retention=24 * 60 * 60)
+class ContentMessage(BaseModel):
+    foo: str
+
+
+@app.subscribe('content.*', 'group_id'')
+async def get_messages(data: ContentMessage, subscriber):
+    print(f"{data.foo}")
+    # This will propagate `data` record headers
+    await subscriber.publish("content.edited.Resource", data=ContentMessage(foo="bar"))
+
+```
+
 
 ## Subscribe
 
@@ -49,35 +71,12 @@ class ContentMessage(BaseModel):
     foo: str
 
 
-@app.subscribe('content.*', 'group_id')
+@app.subscribe('content.*', 'group_id'')
 async def get_messages(data: ContentMessage):
     print(f"{data.foo}")
 
 ```
 
-
-### Retry
-
-Clients may configure a subscriber with different retry behaviors depending on what exception was raised by the subscription callback. Subscriptions accept a dictionary of `Exception` types and `kafkaesk.retry.RetryHandler`s as an argument when registered.
-
-The default `RetryHandler` is `kafkaesk.retry.Raise`. The `Raise` handler will cause the exception to be re-raised and terminate the subscriber.
-
-```python
-import kafkaesk
-from pydantic import BaseModel
-
-app = kafkaesk.Application()
-
-@app.schema("Content", version=1, retention=24 * 60 * 60)
-class ContentMessage(BaseModel):
-    foo: str
-
-
-@app.subscribe("content.*", "group_id", retry_handlers={Exception: kafkaesk.retry.Forward("dlx.content")})
-async def get_messages(data: ContentMessage):
-    raise Exception("UnhandledException")
-
-```
 
 ## Avoiding global object
 
@@ -113,7 +112,7 @@ Optional consumer injected parameters:
 - schema: str
 - record: aiokafka.structs.ConsumerRecord
 - app: kafkaesk.app.Application
-- subscriber: kafkaesk.app.SubscriptionConsumer
+- subscriber: kafkaesk.app.BatchConsumer
 
 Depending on the type annotation for the first parameter, you will get different data injected:
 
@@ -133,7 +132,7 @@ app = kafkaesk.Application(auto_commit=False)
 @app.subscribe('content.*')
 async def get_messages(data: ContentMessage, subscriber):
     print(f"{data.foo}")
-    await subscriber.commit()
+    await subscriber.consumer.commit()
 ```
 
 
@@ -226,7 +225,7 @@ See `logger.py` in examples directory.
 `kafkaesk.ext.logging.record.factory` is a function that will return `kafkaesk.ext.logging.record.PydanticLogRecord` objects.  The `factory()` function scans through any `args` passed to a logger and checks each item to determine if it is a subclass of `pydantid.BaseModel`.  If it is a base model instance and `model._is_log_model` evaluates to `True` the model will be removed from `args` and added to `record._pydantic_data`.  After that `factory()` will use logging's existing logic to finish creating the log record.
 
 ### Handler
-This extensions ships with two handlers capable of handling `kafkaesk.ext.logging.handler.PydanticLogModel` classes: `kafakesk.ext.logging.handler.PydanticStreamHandler` and `kafkaesk.ext.logging.handler.PydanticKafkaeskHandler`.  
+This extensions ships with two handlers capable of handling `kafkaesk.ext.logging.handler.PydanticLogModel` classes: `kafakesk.ext.logging.handler.PydanticStreamHandler` and `kafkaesk.ext.logging.handler.PydanticKafkaeskHandler`.
 
 The stream handler is a very small wrapper around `logging.StreamHandler`, the signature is the same, the only difference is that the handler will attempt to convert any pydantic models it receives to a human readable log message.
 
