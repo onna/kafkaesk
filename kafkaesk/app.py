@@ -138,7 +138,7 @@ class Router:
         stream_id: str,
         group: str,
         *,
-        timeout_seconds: float = 5,
+        timeout_seconds: float = None,
         concurrency: int = None,
     ) -> Callable:
         def inner(func: Callable) -> Callable:
