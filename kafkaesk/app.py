@@ -501,6 +501,9 @@ class Application(Router):
             if exc is not None:
                 raise exc
 
+        for task in pending:
+            task.cancel()
+
         return consumed
 
     def consume_forever(self) -> Awaitable:
