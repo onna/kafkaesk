@@ -496,7 +496,7 @@ class Application(Router):
         await self.stop()
 
         # re-raise any errors so we can validate during tests
-        for task in done | pending:
+        for task in (done + pending):
             exc = task.exception()
             if exc is not None:
                 raise exc
@@ -570,7 +570,7 @@ async def run_app(app: Application) -> None:
         done, pending = await fut
         logger.debug("Exiting consumer")
         # re-raise any errors so we can validate during tests
-        for task in done | pending:
+        for task in (done + pending):
             exc = task.exception()
             if exc is not None:
                 raise exc
