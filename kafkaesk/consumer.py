@@ -283,6 +283,10 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                     await self.on_handler_failed(exc, record)
                 else:
                     self._count_message(record)
+            except InvalidStateError:
+                # Task didnt finish yet, we shouldnt be here since we are
+                # iterating the `done` list, so just log something
+                logger.warning(f"Trying to get exception from unfinished task. Record: {record}")
             except asyncio.CancelledError:
                 # During task execution any exception will be returned in
                 # the `done` list. But timeout exception should be captured
