@@ -13,12 +13,7 @@ logging.basicConfig(level=logging.INFO)
 app = Application()
 
 
-@app.schema("Foobar",
-            streams=[
-                "content.foo",
-                "slow.content.foo",
-                "failed.content.foo"
-            ])
+@app.schema("Foobar", streams=["content.foo", "slow.content.foo", "failed.content.foo"])
 class Foobar(BaseModel):
     timeout: int
 
@@ -50,16 +45,14 @@ async def run():
     task = asyncio.create_task(generate_data(app))
 
     # Regular tasks should be consumed in less than 5s
-    app.subscribe("content.*",
-                  group="example_content_group",
-                  concurrency=10,
-                  timeout_seconds=5)(consumer_logic)
+    app.subscribe("content.*", group="example_content_group", concurrency=10, timeout_seconds=5)(
+        consumer_logic
+    )
 
     # Timeout taks (slow) can be consumed independendly, with different configuration and logic
-    app.subscribe("slow.content.*",
-                  group="timeout_example_content_group",
-                  concurrency=1,
-                  timeout_seconds=None)(consumer_logic)
+    app.subscribe(
+        "slow.content.*", group="timeout_example_content_group", concurrency=1, timeout_seconds=None
+    )(consumer_logic)
 
     await run_app(app)
 
