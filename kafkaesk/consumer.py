@@ -171,6 +171,8 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                 except aiokafka.errors.KafkaConnectionError:
                     # We retry
                     await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            pass
         except StopConsumer:
             logger.info(f"Consumer {self} stopped, exiting")
         except BaseException as exc:

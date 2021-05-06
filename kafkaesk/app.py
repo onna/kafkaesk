@@ -569,6 +569,8 @@ async def run_app(app: Application) -> None:
             loop.add_signal_handler(getattr(signal, signame), partial(_sig_handler, app))
         done, pending = await fut
         logger.debug("Exiting consumer")
+
+        await app.stop()
         # re-raise any errors so we can validate during tests
         for task in done:
             exc = task.exception()
