@@ -496,7 +496,7 @@ class Application(Router):
         await self.stop()
 
         # re-raise any errors so we can validate during tests
-        for task in done | pending:
+        for task in done:
             exc = task.exception()
             if exc is not None:
                 raise exc
@@ -567,8 +567,15 @@ async def run_app(app: Application) -> None:
         fut = asyncio.create_task(app.consume_forever())
         for signame in {"SIGINT", "SIGTERM"}:
             loop.add_signal_handler(getattr(signal, signame), partial(_sig_handler, app))
-        await fut
+        done, pending = await fut
         logger.debug("Exiting consumer")
+
+        await app.stop()
+        # re-raise any errors so we can validate during tests
+        for task in done:
+            exc = task.exception()
+            if exc is not None:
+                raise exc
 
 
 def run(app: Optional[Application] = None) -> None:

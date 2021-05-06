@@ -316,6 +316,7 @@ class TestRun:
 
     async def test_run_app(self):
         app_mock = AsyncMock()
+        app_mock.consume_forever.return_value = (set(), set())
         loop = MagicMock()
         with patch("kafkaesk.app.asyncio.get_event_loop", return_value=loop):
             await run_app(app_mock)
