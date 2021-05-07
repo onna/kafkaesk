@@ -1,4 +1,3 @@
-from kafka.structs import TopicPartition
 from .exceptions import ConsumerUnhealthyException
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
@@ -10,6 +9,7 @@ from .metrics import CONSUMER_REBALANCED
 from .metrics import CONSUMER_TOPIC_OFFSET
 from .metrics import MESSAGE_LEAD_TIME
 from .metrics import NOERROR
+from kafka.structs import TopicPartition
 
 import aiokafka
 import asyncio
