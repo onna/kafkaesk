@@ -145,6 +145,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         event_handlers: typing.Optional[typing.Dict[str, typing.List[typing.Callable]]] = None,
         concurrency: int = 1,
         timeout_seconds: float = None,
+        auto_commit: bool = True,
     ):
         self._initialized = False
         self.stream_id = stream_id
@@ -156,6 +157,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._close = None
         self._app = app
         self._last_commit = 0
+        self._auto_commit = auto_commit
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -359,6 +361,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             await self._app.topic_mng.create_topic(topic=self.stream_id)
 
     async def _maybe_commit(self, forced: bool = False) -> None:
+        if not self._auto_commit:
+            return
+
         if not self._consumer.assignment:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
