@@ -1,3 +1,4 @@
+from kafka.structs import TopicPartition
 from .exceptions import ConsumerUnhealthyException
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
@@ -258,9 +259,16 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             await self._maybe_commit()
             return
 
-        futures: typing.Dict[asyncio.Future[typing.Any], aiokafka.ConsumerRecord] = dict()
         await self._processing.acquire()
+        try:
+            await self._consume_batch(batch)
+        finally:
+            self._processing.release()
 
+    async def _consume_batch(
+        self, batch: typing.Dict[TopicPartition, typing.List[aiokafka.ConsumerRecord]]
+    ) -> None:
+        futures: typing.Dict[asyncio.Future[typing.Any], aiokafka.ConsumerRecord] = dict()
         for tp, records in batch.items():
             for record in records:
                 coro = self._handler(record)
@@ -340,8 +348,6 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             for record in records:
                 await self.emit("message", record=record)
 
-        self._processing.release()
-
     def _count_message(self, record: aiokafka.ConsumerRecord, error: str = NOERROR) -> None:
         CONSUMED_MESSAGES.labels(
             stream_id=record.topic,
@@ -410,6 +416,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                     event="revoked",
                 ).inc()
             logger.info(f"Partitions revoked to {self}: {revoked}")
+            if not self._auto_commit:
+                return
+
             # TODO: we dont want to wait forever for this lock, add a timeout and commit anyways.
             async with self._processing:
                 await self._maybe_commit(forced=True)
