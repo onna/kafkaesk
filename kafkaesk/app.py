@@ -485,6 +485,7 @@ class Application(Router):
                 event_handlers={"message": [on_message]},
                 concurrency=subscription.concurrency or 1,
                 timeout_seconds=subscription.timeout,
+                auto_commit=self.auto_commit,
             )
 
             self._subscription_consumers.append(consumer)

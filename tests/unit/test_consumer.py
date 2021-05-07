@@ -1,5 +1,4 @@
 from kafkaesk import Application
-from functools import partial
 from kafkaesk import Subscription
 from kafkaesk.consumer import build_handler
 from kafkaesk.consumer import BatchConsumer
@@ -182,3 +181,14 @@ class TestSubscriptionConsumer:
             sub._close.set_result(None)
 
             await asyncio.wait([stop_task, task])
+
+    async def test_auto_commit_can_be_disabled(self):
+        sub = BatchConsumer(
+            stream_id="foo",
+            group_id="group",
+            coro=lambda record: 1,
+            app=Application(kafka_servers=["foobar"]),
+            auto_commit=False,
+        )
+        await sub._maybe_commit()
+        assert sub._last_commit == 0
