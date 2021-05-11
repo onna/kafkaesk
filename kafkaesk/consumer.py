@@ -168,7 +168,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             while not self._close:
                 try:
                     if not self._consumer.assignment():
-                        await asyncio.sleep(0)
+                        await asyncio.sleep(0.5)
                         continue
                     await self._consume()
                 except aiokafka.errors.KafkaConnectionError:
