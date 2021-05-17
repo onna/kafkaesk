@@ -2,6 +2,7 @@ from .exceptions import ConsumerUnhealthyException
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
+from .metrics import CONSUMER_HEALTH
 from .metrics import CONSUMED_MESSAGE_TIME
 from .metrics import CONSUMED_MESSAGES
 from .metrics import CONSUMED_MESSAGES_BATCH_SIZE
@@ -168,18 +169,41 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             while not self._close:
                 try:
                     if not self._consumer.assignment():
+                        CONSUMER_HEALTH.labels(
+                            group_id=self.group_id,
+                            status="not_assigned",
+                        ).inc(1)
                         await asyncio.sleep(0.5)
-                        continue
-                    await self._consume()
+                    else:
+                        await self._consume()
+                        CONSUMER_HEALTH.labels(
+                            group_id=self.group_id,
+                            status="ok",
+                        ).set(0)
                 except aiokafka.errors.KafkaConnectionError:
                     # We retry
+                    CONSUMER_HEALTH.labels(
+                        group_id=self.group_id,
+                        status="kafka_connection_error",
+                    ).inc(1)
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
-            pass
+            CONSUMER_HEALTH.labels(
+                group_id=self.group_id,
+                status="cancelled_error",
+            ).inc(1)
         except StopConsumer:
+            CONSUMER_HEALTH.labels(
+                group_id=self.group_id,
+                status="consumer_stopped",
+            ).inc(1)
             logger.info(f"Consumer {self} stopped, exiting")
         except BaseException as exc:
             logger.exception(f"Consumer {self} failed. Finalizing.", exc_info=exc)
+            CONSUMER_HEALTH.labels(
+                group_id=self.group_id,
+                status=f"{exc.__class__.__name__}",
+            ).inc(1)
             raise
         finally:
             await self.finalize()
