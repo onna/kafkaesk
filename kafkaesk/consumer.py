@@ -2,10 +2,10 @@ from .exceptions import ConsumerUnhealthyException
 from .exceptions import HandlerTaskCancelled
 from .exceptions import StopConsumer
 from .exceptions import UnhandledMessage
-from .metrics import CONSUMER_HEALTH
 from .metrics import CONSUMED_MESSAGE_TIME
 from .metrics import CONSUMED_MESSAGES
 from .metrics import CONSUMED_MESSAGES_BATCH_SIZE
+from .metrics import CONSUMER_HEALTH
 from .metrics import CONSUMER_REBALANCED
 from .metrics import CONSUMER_TOPIC_OFFSET
 from .metrics import MESSAGE_LEAD_TIME
