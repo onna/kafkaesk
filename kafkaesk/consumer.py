@@ -169,40 +169,30 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             while not self._close:
                 try:
                     if not self._consumer.assignment():
-                        CONSUMER_HEALTH.labels(
-                            group_id=self.group_id,
-                            status="not_assigned",
-                        ).inc(1)
+                        self._health_metric(False)
                         await asyncio.sleep(0.5)
                     else:
                         await self._consume()
                 except aiokafka.errors.KafkaConnectionError:
                     # We retry
-                    CONSUMER_HEALTH.labels(
-                        group_id=self.group_id,
-                        status="kafka_connection_error",
-                    ).inc(1)
+                    self._health_metric(False)
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
-            CONSUMER_HEALTH.labels(
-                group_id=self.group_id,
-                status="cancelled_error",
-            ).inc(1)
+            self._health_metric(False)
         except StopConsumer:
-            CONSUMER_HEALTH.labels(
-                group_id=self.group_id,
-                status="consumer_stopped",
-            ).inc(1)
+            self._health_metric(False)
             logger.info(f"Consumer {self} stopped, exiting")
         except BaseException as exc:
             logger.exception(f"Consumer {self} failed. Finalizing.", exc_info=exc)
-            CONSUMER_HEALTH.labels(
-                group_id=self.group_id,
-                status=f"{exc.__class__.__name__}",
-            ).inc(1)
+            self._health_metric(False)
             raise
         finally:
             await self.finalize()
+
+    def _health_metric(self, healthy: bool) -> None:
+        CONSUMER_HEALTH.labels(
+            group_id=self.group_id,
+        ).set(healthy)
 
     async def emit(self, name: str, *args: typing.Any, **kwargs: typing.Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -418,24 +408,16 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
     async def healthy(self) -> None:
         if not self._running:
-            CONSUMER_HEALTH.labels(
-                group_id=self.group_id,
-                status="not_running",
-            ).inc(1)
+            self._health_metric(False)
             raise ConsumerUnhealthyException(f"Consumer '{self}' is not running")
 
         if self._consumer is not None and not await self._consumer._client.ready(
             self._consumer._coordinator.coordinator_id
         ):
-            CONSUMER_HEALTH.labels(
-                group_id=self.group_id,
-                status="not_ready",
-            ).inc(1)
+            self._health_metric(False)
             raise ConsumerUnhealthyException(f"Consumer '{self}' is not ready")
-        CONSUMER_HEALTH.labels(
-            group_id=self.group_id,
-            status="ok",
-        ).set(0)
+
+        self._health_metric(True)
         return
 
     # Event handlers

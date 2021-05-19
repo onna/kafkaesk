@@ -92,7 +92,7 @@ CONSUMER_REBALANCED = client.Counter(
 )
 
 CONSUMER_HEALTH = client.Gauge(
-    "kafkaesk_consumer_health", "Liveness probe for the consumer", ["group_id", "status"]
+    "kafkaesk_consumer_health", "Liveness probe for the consumer", ["group_id"]
 )
 
 
