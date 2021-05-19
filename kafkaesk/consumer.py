@@ -5,6 +5,7 @@ from .exceptions import UnhandledMessage
 from .metrics import CONSUMED_MESSAGE_TIME
 from .metrics import CONSUMED_MESSAGES
 from .metrics import CONSUMED_MESSAGES_BATCH_SIZE
+from .metrics import CONSUMER_HEALTH
 from .metrics import CONSUMER_REBALANCED
 from .metrics import CONSUMER_TOPIC_OFFSET
 from .metrics import MESSAGE_LEAD_TIME
@@ -168,21 +169,32 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             while not self._close:
                 try:
                     if not self._consumer.assignment():
+                        self._health_metric(False)
+                        logger.info(f"Consumer {self} waiting for assignment...")
                         await asyncio.sleep(0.5)
-                        continue
-                    await self._consume()
+                    else:
+                        await self._consume()
                 except aiokafka.errors.KafkaConnectionError:
                     # We retry
+                    self._health_metric(False)
+                    logger.info(f"Consumer {self} kafka connection error, retrying...")
                     await asyncio.sleep(0.5)
         except asyncio.CancelledError:
-            pass
+            self._health_metric(False)
         except StopConsumer:
+            self._health_metric(False)
             logger.info(f"Consumer {self} stopped, exiting")
         except BaseException as exc:
             logger.exception(f"Consumer {self} failed. Finalizing.", exc_info=exc)
+            self._health_metric(False)
             raise
         finally:
             await self.finalize()
+
+    def _health_metric(self, healthy: bool) -> None:
+        CONSUMER_HEALTH.labels(
+            group_id=self.group_id,
+        ).set(healthy)
 
     async def emit(self, name: str, *args: typing.Any, **kwargs: typing.Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -398,12 +410,16 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
     async def healthy(self) -> None:
         if not self._running:
+            self._health_metric(False)
             raise ConsumerUnhealthyException(f"Consumer '{self}' is not running")
 
         if self._consumer is not None and not await self._consumer._client.ready(
             self._consumer._coordinator.coordinator_id
         ):
+            self._health_metric(False)
             raise ConsumerUnhealthyException(f"Consumer '{self}' is not ready")
+
+        self._health_metric(True)
         return
 
     # Event handlers

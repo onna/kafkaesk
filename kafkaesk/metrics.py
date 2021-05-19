@@ -91,6 +91,10 @@ CONSUMER_REBALANCED = client.Counter(
     ["group_id", "partition", "event"],
 )
 
+CONSUMER_HEALTH = client.Gauge(
+    "kafkaesk_consumer_health", "Liveness probe for the consumer", ["group_id"]
+)
+
 
 class watch:
     start: float
