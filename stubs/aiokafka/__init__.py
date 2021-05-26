@@ -105,7 +105,7 @@ class AIOKafkaConsumer:
     async def stop(self) -> None:
         ...
 
-    async def commit(self, to_commit: Optional[Dict[TopicPartition, int]] = None) -> None:
+    async def commit(self, offsets: Optional[Dict[TopicPartition, int]] = None) -> None:
         ...
 
     def __aiter__(self) -> AsyncIterator[ConsumerRecord]:

@@ -160,6 +160,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._app = app
         self._last_commit = 0
         self._auto_commit = auto_commit
+        self._tp: typing.Dict[aiokafka.TopicPartition, typing.Optional[int]] = {}
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -300,6 +301,8 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         # Look for failures
         for task in done:
             record = futures[task]
+            tp = aiokafka.TopicPartition(record.topic, record.partition)
+            self._tp[tp] = record.offset + 1
 
             try:
                 if exc := task.exception():
@@ -382,7 +385,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         if not self._auto_commit:
             return
 
-        if not self._consumer.assignment:
+        if not self._consumer.assignment or not self._tp:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
 
@@ -390,7 +393,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         now = time.monotonic_ns()
         if forced or (now > (self._last_commit + interval)):
             try:
-                await self._consumer.commit()
+                offsets = {tp: offset for tp, offset in self._tp.items() if offset}
+                if offsets:
+                    await self._consumer.commit(offsets=offsets)
             except aiokafka.errors.CommitFailedError:
                 logger.warning("Error attempting to commit", exc_info=True)
             self._last_commit = now
@@ -426,6 +431,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
         if revoked:
             for tp in revoked:
+                del self._tp[tp]
                 CONSUMER_REBALANCED.labels(
                     partition=tp.partition,
                     group_id=self.group_id,
@@ -444,6 +450,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             logger.info(f"Partitions assigned to {self}: {assigned}")
 
         for tp in assigned:
+            self._tp[tp] = None
             CONSUMER_REBALANCED.labels(
                 partition=tp.partition,
                 group_id=self.group_id,
