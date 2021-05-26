@@ -345,7 +345,14 @@ class Application(Router):
                     format=opentracing.Format.TEXT_MAP,
                     carrier=carrier,
                 )
-                header_keys = [k for k, _ in headers]
+
+                try:
+                    header_keys = [k for k, _ in headers]
+                except ValueError:
+                    # We want to be resilient to malformated headers
+                    logger.warning(f"Headers are poisoned: '{headers}'")
+                    header_keys = []
+
                 for k, v in carrier.items():
                     # Dont overwrite if they are already present!
                     if k not in header_keys:
