@@ -351,6 +351,7 @@ class Application(Router):
                 except ValueError:
                     # We want to be resilient to malformated headers
                     logger.warning(f"Headers are poisoned: '{headers}'")
+                    headers = []
                     header_keys = []
 
                 for k, v in carrier.items():
