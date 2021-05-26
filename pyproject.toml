@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kafkaesk"
-version = "0.6.7"
+version = "0.7.0"
 description = "Easy publish and subscribe to events with python and Kafka."
 authors = ["vangheem <vangheem@gmail.com>", "pfreixes <pfreixes@gmail.com>"]
 classifiers = [
