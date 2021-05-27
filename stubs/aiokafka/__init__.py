@@ -95,7 +95,7 @@ class AIOKafkaConsumer:
         ...
 
     async def subscribe(
-        self, pattern: Optional[str] = None, listener: Optional["ConsumerRebalanceListener"] = None
+            self, topics: Optional[List[str]] = None, pattern: Optional[str] = None, listener: Optional["ConsumerRebalanceListener"] = None
     ) -> None:
         ...
 

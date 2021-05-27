@@ -230,8 +230,14 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     async def _consumer_factory(self) -> aiokafka.AIOKafkaConsumer:
         consumer = self._app.consumer_factory(self.group_id)
         # This is needed in case we have a prefix
-        pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self.stream_id))
-        consumer.subscribe(pattern=pattern, listener=self)
+        topic_id = self._app.topic_mng.get_topic_id(self.stream_id)
+
+        if "*" in self.stream_id.split("."):
+            pattern = fnmatch.translate(topic_id)
+            consumer.subscribe(pattern=pattern, listener=self)
+        else:
+            consumer.subscribe(topics=[topic_id], listener=self)
+
         return consumer
 
     async def stop(self) -> None:
