@@ -160,7 +160,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._app = app
         self._last_commit = 0
         self._auto_commit = auto_commit
-        self._tp: typing.Dict[aiokafka.TopicPartition, typing.Optional[int]] = {}
+        self._tp: typing.Dict[aiokafka.TopicPartition, int] = {}
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -230,7 +230,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         # This is needed in case we have a prefix
         topic_id = self._app.topic_mng.get_topic_id(self.stream_id)
 
-        if "*" in self.stream_id.split("."):
+        if "*" in self.stream_id:
             pattern = fnmatch.translate(topic_id)
             consumer.subscribe(pattern=pattern, listener=self)
         else:
@@ -306,7 +306,13 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         for task in done:
             record = futures[task]
             tp = aiokafka.TopicPartition(record.topic, record.partition)
-            self._tp[tp] = record.offset + 1
+
+            # Get the largest offset of the batch
+            current_max = self._tp.get(tp)
+            if not current_max:
+                self._tp[tp] = record.offset + 1
+            else:
+                self._tp[tp] = max(record.offset + 1, current_max)
 
             try:
                 if exc := task.exception():
@@ -397,9 +403,8 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         now = time.monotonic_ns()
         if forced or (now > (self._last_commit + interval)):
             try:
-                offsets = {tp: offset for tp, offset in self._tp.items() if offset}
-                if offsets:
-                    await self._consumer.commit(offsets=offsets)
+                if self._tp:
+                    await self._consumer.commit(offsets=self._tp)
             except aiokafka.errors.CommitFailedError:
                 logger.warning("Error attempting to commit", exc_info=True)
             self._last_commit = now
@@ -439,7 +444,8 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                     await self._maybe_commit(forced=True)
 
             for tp in revoked:
-                del self._tp[tp]
+                # Remove the partition from the dict
+                self._tp.pop(tp, None)
                 CONSUMER_REBALANCED.labels(
                     partition=tp.partition,
                     group_id=self.group_id,
@@ -452,7 +458,6 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             logger.info(f"Partitions assigned to {self}: {assigned}")
 
         for tp in assigned:
-            self._tp[tp] = None
             CONSUMER_REBALANCED.labels(
                 partition=tp.partition,
                 group_id=self.group_id,
