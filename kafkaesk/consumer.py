@@ -170,11 +170,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             while not self._close:
                 try:
                     if not self._consumer.assignment():
-                        self._health_metric(False)
-                        logger.info(f"Consumer {self} waiting for assignment...")
-                        await asyncio.sleep(0.5)
-                    else:
-                        await self._consume()
+                        await asyncio.sleep(2)
+                        continue
+                    await self._consume()
                 except aiokafka.errors.KafkaConnectionError:
                     # We retry
                     self._health_metric(False)
