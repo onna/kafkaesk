@@ -272,15 +272,12 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     async def _consume(self) -> None:
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
 
-        if not batch:
-            await self._maybe_commit()
-            return
+        async with self._processing:
+            if not batch:
+                await self._maybe_commit()
+            else:
+                await self._consume_batch(batch)
 
-        await self._processing.acquire()
-        try:
-            await self._consume_batch(batch)
-        finally:
-            self._processing.release()
 
     async def _consume_batch(
         self, batch: typing.Dict[TopicPartition, typing.List[aiokafka.ConsumerRecord]]
@@ -439,8 +436,10 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
         if revoked:
+            # Wait for the current batch to be processed
             async with self._processing:
                 if self._auto_commit:
+                    # And commit before releasing the partitions.
                     await self._maybe_commit(forced=True)
 
             for tp in revoked:
