@@ -391,7 +391,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         if not self._auto_commit:
             return
 
-        if not self._consumer.assignment or not self._tp:
+        if not self._consumer.assignment() or not self._tp:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
 
@@ -441,14 +441,14 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                     # And commit before releasing the partitions.
                     await self._maybe_commit(forced=True)
 
-            for tp in revoked:
-                # Remove the partition from the dict
-                self._tp.pop(tp, None)
-                CONSUMER_REBALANCED.labels(
-                    partition=tp.partition,
-                    group_id=self.group_id,
-                    event="revoked",
-                ).inc()
+                for tp in revoked:
+                    # Remove the partition from the dict
+                    self._tp.pop(tp, None)
+                    CONSUMER_REBALANCED.labels(
+                        partition=tp.partition,
+                        group_id=self.group_id,
+                        event="revoked",
+                    ).inc()
             logger.info(f"Partitions revoked to {self}: {revoked}")
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
@@ -456,6 +456,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             logger.info(f"Partitions assigned to {self}: {assigned}")
 
         for tp in assigned:
+            position = await consumer.position(partition)
+            self._tp[tp] = position
+
             CONSUMER_REBALANCED.labels(
                 partition=tp.partition,
                 group_id=self.group_id,
