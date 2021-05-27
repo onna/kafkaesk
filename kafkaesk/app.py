@@ -335,6 +335,14 @@ class Application(Router):
 
         if not headers:
             headers = []
+        else:
+            # this is just to check the headers shape
+            try:
+                for _, _ in headers:
+                    pass
+            except ValueError:
+                # We want to be resilient to malformated headers
+                logger.exception(f"Malformed headers: '{headers}'")
 
         if isinstance(tracer.scope_manager, ContextVarsScopeManager):
             # This only makes sense if the context manager is asyncio aware
@@ -345,6 +353,7 @@ class Application(Router):
                     format=opentracing.Format.TEXT_MAP,
                     carrier=carrier,
                 )
+
                 header_keys = [k for k, _ in headers]
                 for k, v in carrier.items():
                     # Dont overwrite if they are already present!

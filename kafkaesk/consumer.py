@@ -160,6 +160,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._app = app
         self._last_commit = 0
         self._auto_commit = auto_commit
+        self._tp: typing.Dict[aiokafka.TopicPartition, int] = {}
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -169,11 +170,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             while not self._close:
                 try:
                     if not self._consumer.assignment():
-                        self._health_metric(False)
-                        logger.info(f"Consumer {self} waiting for assignment...")
-                        await asyncio.sleep(0.5)
-                    else:
-                        await self._consume()
+                        await asyncio.sleep(2)
+                        continue
+                    await self._consume()
                 except aiokafka.errors.KafkaConnectionError:
                     # We retry
                     self._health_metric(False)
@@ -229,8 +228,14 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     async def _consumer_factory(self) -> aiokafka.AIOKafkaConsumer:
         consumer = self._app.consumer_factory(self.group_id)
         # This is needed in case we have a prefix
-        pattern = fnmatch.translate(self._app.topic_mng.get_topic_id(self.stream_id))
-        consumer.subscribe(pattern=pattern, listener=self)
+        topic_id = self._app.topic_mng.get_topic_id(self.stream_id)
+
+        if "*" in self.stream_id:
+            pattern = fnmatch.translate(topic_id)
+            consumer.subscribe(pattern=pattern, listener=self)
+        else:
+            consumer.subscribe(topics=[topic_id], listener=self)
+
         return consumer
 
     async def stop(self) -> None:
@@ -300,6 +305,14 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         # Look for failures
         for task in done:
             record = futures[task]
+            tp = aiokafka.TopicPartition(record.topic, record.partition)
+
+            # Get the largest offset of the batch
+            current_max = self._tp.get(tp)
+            if not current_max:
+                self._tp[tp] = record.offset + 1
+            else:
+                self._tp[tp] = max(record.offset + 1, current_max)
 
             try:
                 if exc := task.exception():
@@ -382,7 +395,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         if not self._auto_commit:
             return
 
-        if not self._consumer.assignment:
+        if not self._consumer.assignment or not self._tp:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
 
@@ -390,7 +403,8 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         now = time.monotonic_ns()
         if forced or (now > (self._last_commit + interval)):
             try:
-                await self._consumer.commit()
+                if self._tp:
+                    await self._consumer.commit(offsets=self._tp)
             except aiokafka.errors.CommitFailedError:
                 logger.warning("Error attempting to commit", exc_info=True)
             self._last_commit = now
@@ -425,19 +439,19 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
         if revoked:
+            async with self._processing:
+                if self._auto_commit:
+                    await self._maybe_commit(forced=True)
+
             for tp in revoked:
+                # Remove the partition from the dict
+                self._tp.pop(tp, None)
                 CONSUMER_REBALANCED.labels(
                     partition=tp.partition,
                     group_id=self.group_id,
                     event="revoked",
                 ).inc()
             logger.info(f"Partitions revoked to {self}: {revoked}")
-            if not self._auto_commit:
-                return
-
-            # TODO: we dont want to wait forever for this lock, add a timeout and commit anyways.
-            async with self._processing:
-                await self._maybe_commit(forced=True)
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
         if assigned:

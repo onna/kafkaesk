@@ -4,6 +4,7 @@ from kafkaesk.app import published_callback
 from kafkaesk.app import run
 from kafkaesk.app import run_app
 from kafkaesk.app import SchemaRegistration
+from jaeger_client import Config, Tracer
 from opentracing.scope_managers.contextvars import ContextVarsScopeManager
 from tests.utils import record_factory
 from unittest.mock import ANY
@@ -11,6 +12,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
+
 
 import json
 import kafkaesk
@@ -258,15 +260,21 @@ class TestApplication:
         app = kafkaesk.Application(kafka_servers=["foo"])
         producer = AsyncMock()
         app._get_producer = AsyncMock(return_value=producer)
+        config = Config(
+            config={"sampler": {"type": "const", "param": 1}, "logging": True, "propagation": "b3"},
+            service_name="test_service",
+            scope_manager=ContextVarsScopeManager(),
+        )
+        # this call also sets opentracing.tracer
+        tracer = config.initialize_tracer()
 
-        tracer = opentracing.global_tracer()
-        tracer._scope_manager = ContextVarsScopeManager()
+        span = tracer.start_span(operation_name="dummy")
+        tracer.scope_manager.activate(span, True)
 
-        tracer.scope_manager.activate("foobar", True)
+        await app.raw_publish("foobar", b"foobar")
 
-        with patch.object(tracer, "inject") as mock:
-            await app.raw_publish("foobar", b"foobar")
-            mock.assert_called_once()
+        headers = producer.mock_calls[0].kwargs["headers"]
+        assert str(span).startswith(headers[0][1].decode())
 
 
 class TestSchemaRegistration:

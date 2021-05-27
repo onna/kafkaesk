@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kafkaesk"
-version = "0.6.7"
+version = "0.7.0"
 description = "Easy publish and subscribe to events with python and Kafka."
 authors = ["vangheem <vangheem@gmail.com>", "pfreixes <pfreixes@gmail.com>"]
 classifiers = [
@@ -37,6 +37,7 @@ pytest-rerunfailures = "^9.0"
 pytest-cov = "^2.8.1"
 pdbpp = "^0.10.2"
 python-language-server = "^0.35.1"
+jaeger-client = "^4.5.0"
 
 [tool.poetry.scripts]
 kafkaesk = 'kafkaesk.app:run'
