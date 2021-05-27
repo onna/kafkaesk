@@ -456,7 +456,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             logger.info(f"Partitions assigned to {self}: {assigned}")
 
         for tp in assigned:
-            position = await consumer.position(partition)
+            position = await self._consumer.position(tp)
             self._tp[tp] = position
 
             CONSUMER_REBALANCED.labels(
