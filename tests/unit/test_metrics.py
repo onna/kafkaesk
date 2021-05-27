@@ -28,6 +28,8 @@ async def test_record_metric_on_rebalance():
             coro,
             app_mock,
         )
+        rebalance_listener._consumer = AsyncMock()
+
         await rebalance_listener.on_partitions_assigned(
             [TopicPartition(topic="foobar", partition=0)]
         )
