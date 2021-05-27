@@ -278,7 +278,6 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             else:
                 await self._consume_batch(batch)
 
-
     async def _consume_batch(
         self, batch: typing.Dict[TopicPartition, typing.List[aiokafka.ConsumerRecord]]
     ) -> None:
