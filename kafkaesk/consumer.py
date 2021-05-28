@@ -208,7 +208,6 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._close = None
         self._running = True
         self._processing = asyncio.Lock()
-        await self._maybe_create_topic()
         self._consumer = await self._consumer_factory()
         await self._consumer.start()
         self._message_handler = build_handler(self._coro, self._app, self)  # type: ignore
@@ -380,12 +379,6 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     @property
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
         return self._consumer
-
-    async def _maybe_create_topic(self) -> None:
-        # TBD: should we manage this here?
-        return
-        if not await self._app.topic_mng.topic_exists(self.stream_id):
-            await self._app.topic_mng.create_topic(topic=self.stream_id)
 
     async def _maybe_commit(self, forced: bool = False) -> None:
         if not self._auto_commit:
