@@ -133,6 +133,64 @@ class Router:
 
         self._event_handlers[name].append(handler)
 
+    def _subscribe(
+        self,
+        group: str,
+        *,
+        consumer_id: str = None,
+        pattern: str = None,
+        topics: List[str] = None,
+        timeout_seconds: float = None,
+        concurrency: int = None,
+    ) -> Callable:
+        def inner(func: Callable) -> Callable:
+            # If there is no consumer_id use the group instead
+            subscription = Subscription(
+                consumer_id or group,
+                func,
+                group or func.__name__,
+                pattern=pattern,
+                topics=topics,
+                concurrency=concurrency,
+                timeout_seconds=timeout_seconds,
+            )
+            self._subscriptions.append(subscription)
+            return func
+
+        return inner
+
+    def subscribe_to_topics(
+        self,
+        topics: List[str],
+        group: str,
+        *,
+        timeout_seconds: float = None,
+        concurrency: int = None,
+    ) -> Callable:
+        return self._subscribe(
+            group=group,
+            topics=topics,
+            pattern=None,
+            timeout_seconds=timeout_seconds,
+            concurrency=concurrency,
+        )
+
+    def subscribe_to_pattern(
+        self,
+        pattern: str,
+        group: str,
+        *,
+        timeout_seconds: float = None,
+        concurrency: int = None,
+    ) -> Callable:
+        return self._subscribe(
+            group=group,
+            topics=None,
+            pattern=pattern,
+            timeout_seconds=timeout_seconds,
+            concurrency=concurrency,
+        )
+
     def subscribe(
         self,
         stream_id: str,
@@ -141,18 +199,14 @@ class Router:
         timeout_seconds: float = None,
         concurrency: int = None,
     ) -> Callable:
-        def inner(func: Callable) -> Callable:
-            subscription = Subscription(
-                stream_id,
-                func,
-                group or func.__name__,
-                concurrency=concurrency,
-                timeout_seconds=timeout_seconds,
-            )
-            self._subscriptions.append(subscription)
-            return func
-
-        return inner
+        """Keep backwards compatibility"""
+        return self._subscribe(
+            group=group,
+            topics=None,
+            pattern=stream_id,
+            timeout_seconds=timeout_seconds,
+            concurrency=concurrency,
+        )
 
     def schema(
         self,
@@ -475,7 +529,6 @@ class Application(Router):
 
     async def consume_for(self, num_messages: int, *, seconds: Optional[int] = None) -> int:
         consumed = 0
-
         self._subscription_consumers = []
         tasks = []
         for subscription in self._subscriptions:
@@ -487,13 +540,9 @@ class Application(Router):
                     raise StopConsumer
 
             consumer = BatchConsumer(
-                stream_id=subscription.stream_id,
-                group_id=subscription.group,
-                coro=subscription.func,
+                subscription=subscription,
                 app=self,
                 event_handlers={"message": [on_message]},
-                concurrency=subscription.concurrency or 1,
-                timeout_seconds=subscription.timeout,
                 auto_commit=self.auto_commit,
             )
 
@@ -522,12 +571,9 @@ class Application(Router):
 
         for subscription in self._subscriptions:
             consumer = BatchConsumer(
-                stream_id=subscription.stream_id,
-                group_id=subscription.group,
-                coro=subscription.func,
+                subscription=subscription,
                 app=self,
-                concurrency=subscription.concurrency or 1,
-                timeout_seconds=subscription.timeout,
+                auto_commit=self.auto_commit,
             )
             self._subscription_consumers.append(consumer)
 
