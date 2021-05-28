@@ -236,7 +236,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
         if self.pattern:
             # This is needed in case we have a prefix
-            topic_id = self._app.topic_mng.get_topic_id(self.stream_id)
+            topic_id = self._app.topic_mng.get_topic_id(self.pattern)
 
             if "*" in self.pattern:
                 pattern = fnmatch.translate(topic_id)
