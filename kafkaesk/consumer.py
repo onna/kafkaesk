@@ -47,7 +47,7 @@ class Subscription:
     ):
         self.consumer_id = consumer_id
         if self.pattern and self.topics:
-            raise AssertionError("Both of the params 'pattern' and 'topics' are not allowed. Select only one mode.")
+            raise AssertionError("Both of the params 'pattern' and 'topics' are not allowed. Select only one mode.")  # noqa
         self.pattern = pattern
         self.topics = topics
         self.func = func
