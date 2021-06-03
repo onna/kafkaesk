@@ -235,7 +235,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         consumer = self._app.consumer_factory(self.group_id)
 
         if self.pattern and self.topics:
-            raise AssertionError("Both of the params 'pattern' and 'topics' are not allowed. Select only one mode.")  # noqa
+            raise AssertionError(
+                "Both of the params 'pattern' and 'topics' are not allowed. Select only one mode."
+            )  # noqa
 
         if self.pattern:
             # This is needed in case we have a prefix
