@@ -46,8 +46,6 @@ class Subscription:
         concurrency: int = None,
     ):
         self.consumer_id = consumer_id
-        if self.pattern and self.topics:
-            raise AssertionError("Both of the params 'pattern' and 'topics' are not allowed. Select only one mode.")  # noqa
         self.pattern = pattern
         self.topics = topics
         self.func = func
@@ -235,6 +233,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
     async def _consumer_factory(self) -> aiokafka.AIOKafkaConsumer:
         consumer = self._app.consumer_factory(self.group_id)
+
+        if self.pattern and self.topics:
+            raise AssertionError("Both of the params 'pattern' and 'topics' are not allowed. Select only one mode.")  # noqa
 
         if self.pattern:
             # This is needed in case we have a prefix
