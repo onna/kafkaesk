@@ -75,7 +75,7 @@ class ContentMessage(BaseModel):
     foo: str
 
 
-@app.subscribe('content.*', 'group_id'')
+@app.subscribe("content.*", "group_id")
 async def get_messages(data: ContentMessage, subscriber):
     print(f"{data.foo}")
     # This will propagate `data` record headers
@@ -96,7 +96,7 @@ class ContentMessage(BaseModel):
     foo: str
 
 
-@app.subscribe('content.*', 'group_id'')
+@app.subscribe("content.*", "group_id")
 async def get_messages(data: ContentMessage):
     print(f"{data.foo}")
 
@@ -118,12 +118,12 @@ class ContentMessage(BaseModel):
     foo: str
 
 
-@router.subscribe('content.*')
+@router.subscribe("content.*", "group_id")
 async def get_messages(data: ContentMessage):
     print(f"{data.foo}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = kafkaesk.Application()
     app.mount(router)
     kafkaesk.run(app)
@@ -148,10 +148,10 @@ Depending on the type annotation for the first parameter, you will get different
 
 To accomplish a manual commit strategy yourself:
 
-```
+```python
 app = kafkaesk.Application(auto_commit=False)
 
-@app.subscribe('content.*')
+@app.subscribe("content.*", "group_id")
 async def get_messages(data: ContentMessage, subscriber):
     print(f"{data.foo}")
     await subscriber.consumer.commit()
