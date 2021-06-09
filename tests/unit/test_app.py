@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
-
+import asyncio
 import json
 import kafkaesk
 import kafkaesk.exceptions
@@ -107,10 +107,15 @@ class TestApplication:
 
     async def test_consumer_health_check_raises_exception(self):
         app = kafkaesk.Application()
+        subscription = kafkaesk.Subscription(
+            "test_consumer",
+            lambda record: 1,
+            "group",
+            topics=["foo"]
+        )
+
         subscription_consumer = kafkaesk.BatchConsumer(
-            stream_id="foo",
-            group_id="group",
-            coro=lambda record: 1,
+            subscription=subscription,
             app=app,
         )
         app._subscription_consumers.append(subscription_consumer)
@@ -224,12 +229,16 @@ class TestApplication:
             bar: str
 
         producer = AsyncMock()
+        producer.send.return_value = fut = asyncio.Future()
+        fut.set_result("ok")
         app._get_producer = AsyncMock(return_value=producer)
         app._topic_mng = MagicMock()
         app._topic_mng.get_topic_id.return_value = "foobar"
         app._topic_mng.topic_exists = AsyncMock(return_value=True)
 
-        await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
+        future = await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
+        _ = await future
+
         producer.send.assert_called_with(
             "foobar",
             value=b'{"schema":"Foo:1","data":{"bar":"foo"}}',
@@ -245,13 +254,16 @@ class TestApplication:
             bar: str
 
         producer = AsyncMock()
+        producer.send.return_value = fut = asyncio.Future()
+        fut.set_result("ok")
         app._get_producer = AsyncMock(return_value=producer)
         app._topic_mng = MagicMock()
         app._topic_mng.get_topic_id.return_value = "foobar"
         app._topic_mng.topic_exists = AsyncMock(return_value=False)
         app._topic_mng.create_topic = AsyncMock()
 
-        await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
+        future = await app.publish("foobar", Foo(bar="foo"), headers=[("foo", b"bar")])
+        await future
         app._topic_mng.create_topic.assert_called_with(
             "foobar", replication_factor=None, retention_ms=100 * 1000
         )
@@ -259,6 +271,8 @@ class TestApplication:
     async def test_publish_injects_tracing(self):
         app = kafkaesk.Application(kafka_servers=["foo"])
         producer = AsyncMock()
+        producer.send.return_value = fut = asyncio.Future()
+        fut.set_result("ok")
         app._get_producer = AsyncMock(return_value=producer)
         config = Config(
             config={"sampler": {"type": "const", "param": 1}, "logging": True, "propagation": "b3"},
@@ -271,7 +285,8 @@ class TestApplication:
         span = tracer.start_span(operation_name="dummy")
         tracer.scope_manager.activate(span, True)
 
-        await app.raw_publish("foobar", b"foobar")
+        future = await app.raw_publish("foobar", b"foobar")
+        await future
 
         headers = producer.mock_calls[0].kwargs["headers"]
         assert str(span).startswith(headers[0][1].decode())

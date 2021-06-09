@@ -36,21 +36,25 @@ logger = logging.getLogger(__name__)
 class Subscription:
     def __init__(
         self,
-        stream_id: str,
+        consumer_id: str,
         func: typing.Callable,
         group: str,
         *,
+        pattern: typing.Optional[str] = None,
+        topics: typing.Optional[typing.List[str]] = None,
         timeout_seconds: float = None,
         concurrency: int = None,
     ):
-        self.stream_id = stream_id
+        self.consumer_id = consumer_id
+        self.pattern = pattern
+        self.topics = topics
         self.func = func
         self.group = group
         self.timeout = timeout_seconds
         self.concurrency = concurrency
 
     def __repr__(self) -> str:
-        return f"<Subscription stream: {self.stream_id} >"
+        return f"<Subscription stream: {self.consumer_id} >"
 
 
 def _pydantic_msg_handler(
@@ -131,6 +135,7 @@ def build_handler(
 
 
 class BatchConsumer(aiokafka.ConsumerRebalanceListener):
+    _subscription: Subscription
     _close: typing.Optional[asyncio.Future]
     _consumer: aiokafka.AIOKafkaConsumer
     _offsets: typing.Dict[aiokafka.TopicPartition, int]
@@ -140,27 +145,29 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
     def __init__(
         self,
-        stream_id: str,
-        group_id: str,
-        coro: typing.Callable,
+        subscription: Subscription,
         app: "Application",
         event_handlers: typing.Optional[typing.Dict[str, typing.List[typing.Callable]]] = None,
-        concurrency: int = 1,
-        timeout_seconds: float = None,
         auto_commit: bool = True,
     ):
         self._initialized = False
-        self.stream_id = stream_id
-        self.group_id = group_id
-        self._coro = coro
+        self.stream_id = subscription.consumer_id
+        self.group_id = subscription.group
+        self._coro = subscription.func
         self._event_handlers = event_handlers or {}
-        self._concurrency = concurrency
-        self._timeout = timeout_seconds
+        self._concurrency = subscription.concurrency or 1
+        self._timeout = subscription.timeout
+        self._subscription = subscription
         self._close = None
         self._app = app
         self._last_commit = 0
         self._auto_commit = auto_commit
         self._tp: typing.Dict[aiokafka.TopicPartition, int] = {}
+
+        # We accept either pattern or a list of topics, also we might accept a single topic
+        # to keep compatibility with older API
+        self.pattern = subscription.pattern
+        self.topics = subscription.topics
 
     async def __call__(self) -> None:
         if not self._initialized:
@@ -208,7 +215,6 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._close = None
         self._running = True
         self._processing = asyncio.Lock()
-        await self._maybe_create_topic()
         self._consumer = await self._consumer_factory()
         await self._consumer.start()
         self._message_handler = build_handler(self._coro, self._app, self)  # type: ignore
@@ -227,14 +233,26 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
     async def _consumer_factory(self) -> aiokafka.AIOKafkaConsumer:
         consumer = self._app.consumer_factory(self.group_id)
-        # This is needed in case we have a prefix
-        topic_id = self._app.topic_mng.get_topic_id(self.stream_id)
 
-        if "*" in self.stream_id:
-            pattern = fnmatch.translate(topic_id)
-            consumer.subscribe(pattern=pattern, listener=self)
+        if self.pattern and self.topics:
+            raise AssertionError(
+                "Both of the params 'pattern' and 'topics' are not allowed. Select only one mode."
+            )  # noqa
+
+        if self.pattern:
+            # This is needed in case we have a prefix
+            topic_id = self._app.topic_mng.get_topic_id(self.pattern)
+
+            if "*" in self.pattern:
+                pattern = fnmatch.translate(topic_id)
+                consumer.subscribe(pattern=pattern, listener=self)
+            else:
+                consumer.subscribe(topics=[topic_id], listener=self)
+        elif self.topics:
+            topics = [self._app.topic_mng.get_topic_id(topic) for topic in self.topics]
+            consumer.subscribe(topics=topics, listener=self)
         else:
-            consumer.subscribe(topics=[topic_id], listener=self)
+            raise ValueError("Either `topics` or `pattern` should be defined")
 
         return consumer
 
@@ -272,15 +290,11 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     async def _consume(self) -> None:
         batch = await self._consumer.getmany(max_records=self._concurrency, timeout_ms=500)
 
-        if not batch:
-            await self._maybe_commit()
-            return
-
-        await self._processing.acquire()
-        try:
-            await self._consume_batch(batch)
-        finally:
-            self._processing.release()
+        async with self._processing:
+            if not batch:
+                await self._maybe_commit()
+            else:
+                await self._consume_batch(batch)
 
     async def _consume_batch(
         self, batch: typing.Dict[TopicPartition, typing.List[aiokafka.ConsumerRecord]]
@@ -385,17 +399,11 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     def consumer(self) -> aiokafka.AIOKafkaConsumer:
         return self._consumer
 
-    async def _maybe_create_topic(self) -> None:
-        # TBD: should we manage this here?
-        return
-        if not await self._app.topic_mng.topic_exists(self.stream_id):
-            await self._app.topic_mng.create_topic(topic=self.stream_id)
-
     async def _maybe_commit(self, forced: bool = False) -> None:
         if not self._auto_commit:
             return
 
-        if not self._consumer.assignment or not self._tp:
+        if not self._consumer.assignment() or not self._tp:
             logger.warning("Cannot commit because no partitions are assigned!")
             return
 
@@ -439,18 +447,20 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     # Event handlers
     async def on_partitions_revoked(self, revoked: typing.List[aiokafka.TopicPartition]) -> None:
         if revoked:
+            # Wait for the current batch to be processed
             async with self._processing:
                 if self._auto_commit:
+                    # And commit before releasing the partitions.
                     await self._maybe_commit(forced=True)
 
-            for tp in revoked:
-                # Remove the partition from the dict
-                self._tp.pop(tp, None)
-                CONSUMER_REBALANCED.labels(
-                    partition=tp.partition,
-                    group_id=self.group_id,
-                    event="revoked",
-                ).inc()
+                for tp in revoked:
+                    # Remove the partition from the dict
+                    self._tp.pop(tp, None)
+                    CONSUMER_REBALANCED.labels(
+                        partition=tp.partition,
+                        group_id=self.group_id,
+                        event="revoked",
+                    ).inc()
             logger.info(f"Partitions revoked to {self}: {revoked}")
 
     async def on_partitions_assigned(self, assigned: typing.List[aiokafka.TopicPartition]) -> None:
@@ -458,6 +468,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             logger.info(f"Partitions assigned to {self}: {assigned}")
 
         for tp in assigned:
+            position = await self._consumer.position(tp)
+            self._tp[tp] = position
+
             CONSUMER_REBALANCED.labels(
                 partition=tp.partition,
                 group_id=self.group_id,
