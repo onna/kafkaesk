@@ -63,10 +63,18 @@ def _pydantic_msg_handler(
     try:
         data: typing.Dict[str, typing.Any] = orjson.loads(record.value)
         return model.parse_obj(data["data"])
-    except (pydantic.ValidationError, orjson.JSONDecodeError):
+    except orjson.JSONDecodeError:
+        # log the execption so we can see what fields failed
+        logger.warning(f"Payload is not valid json: {record}", exc_info=True)
+        raise UnhandledMessage("Error deserializing json")
+    except pydantic.ValidationError:
         # log the execption so we can see what fields failed
         logger.warning(f"Error parsing pydantic model:{model} {record}", exc_info=True)
         raise UnhandledMessage(f"Error parsing data: {model}")
+    except Exception:
+        # Catch all
+        logger.warning(f"Error parsing payload: {model} {record}", exc_info=True)
+        raise UnhandledMessage("Error parsing payload")
 
 
 def _raw_msg_handler(record: aiokafka.structs.ConsumerRecord) -> typing.Dict[str, typing.Any]:
