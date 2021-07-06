@@ -60,11 +60,10 @@ class Subscription:
 def _pydantic_msg_handler(
     model: typing.Type[pydantic.BaseModel], record: aiokafka.ConsumerRecord
 ) -> pydantic.BaseModel:
-    data: typing.Dict[str, typing.Any] = orjson.loads(record.value)
-
     try:
+        data: typing.Dict[str, typing.Any] = orjson.loads(record.value)
         return model.parse_obj(data["data"])
-    except pydantic.ValidationError:
+    except (pydantic.ValidationError, orjson.JSONDecodeError):
         # log the execption so we can see what fields failed
         logger.warning(f"Error parsing pydantic model:{model} {record}", exc_info=True)
         raise UnhandledMessage(f"Error parsing data: {model}")

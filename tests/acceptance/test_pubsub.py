@@ -394,3 +394,56 @@ async def test_publish_unhealthy(app):
         app._producer._sender.sender_task.done.return_value = True
         with pytest.raises(ProducerUnhealthyException):
             await app.raw_publish("foobar", b"foobar")
+
+
+async def test_invalid_event_schema_is_sending_error_metric(app):
+    side_effect = None
+
+    @app.schema("Foo", streams=["foo.bar"])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    class Baz(pydantic.BaseModel):
+        qux: str
+
+    @app.subscribe("foo.bar", group="test_group")
+    async def consume(data: Foo):
+        side_effect = True
+
+    with patch("kafkaesk.consumer.CONSUMED_MESSAGES") as consumed_messages_metric:
+        async with app:
+            await app.publish("foo.bar", Baz(qux="1"))
+            await app.flush()
+            await app.consume_for(1, seconds=5)
+
+        consumed_messages_metric.labels.assert_called_once()
+        metric_kwargs = consumed_messages_metric.labels.call_args.kwargs
+        assert metric_kwargs["error"] == "UnhandledMessage"
+        consumed_messages_metric.labels(**metric_kwargs).inc.assert_called_once()
+
+    assert side_effect is None
+
+
+async def test_malformed_event_schema_is_sending_error_metric(app):
+    side_effect = None
+
+    @app.schema("Foo", streams=["foo.bar"])
+    class Foo(pydantic.BaseModel):
+        bar: str
+
+    @app.subscribe("foo.bar", group="test_group")
+    async def consume(data: Foo):
+        side_effect = True
+
+    with patch("kafkaesk.consumer.CONSUMED_MESSAGES") as consumed_messages_metric:
+        async with app:
+            await app.raw_publish("foo.bar", b"bad string")
+            await app.flush()
+            await app.consume_for(1, seconds=5)
+
+        consumed_messages_metric.labels.assert_called_once()
+        metric_kwargs = consumed_messages_metric.labels.call_args.kwargs
+        assert metric_kwargs["error"] == "UnhandledMessage"
+        consumed_messages_metric.labels(**metric_kwargs).inc.assert_called_once()
+
+    assert side_effect is None

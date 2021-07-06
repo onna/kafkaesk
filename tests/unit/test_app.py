@@ -108,10 +108,7 @@ class TestApplication:
     async def test_consumer_health_check_raises_exception(self):
         app = kafkaesk.Application()
         subscription = kafkaesk.Subscription(
-            "test_consumer",
-            lambda record: 1,
-            "group",
-            topics=["foo"]
+            "test_consumer", lambda record: 1, "group", topics=["foo"]
         )
 
         subscription_consumer = kafkaesk.BatchConsumer(
