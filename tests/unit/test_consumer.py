@@ -4,9 +4,11 @@ from kafkaesk.consumer import build_handler
 from kafkaesk.consumer import BatchConsumer, Subscription
 from kafkaesk.exceptions import ConsumerUnhealthyException
 from kafkaesk.exceptions import StopConsumer
+from kafkaesk.exceptions import UnhandledMessage
 from tests.utils import record_factory
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import Mock
 from unittest.mock import patch
 
 import aiokafka.errors
@@ -14,6 +16,8 @@ import asyncio
 import opentracing
 import pydantic
 import pytest
+import time
+import json
 
 pytestmark = pytest.mark.asyncio
 
@@ -72,6 +76,36 @@ class TestMessageHandler:
 
         handler = self.factory(handle_func)
         await handler(record_factory(), MagicMock())
+
+    async def test_malformed_message(self):
+        class Foo(pydantic.BaseModel):
+            foo: str
+
+        side_effect = None
+
+        async def func(ob: Foo):
+            nonlocal side_effect
+            side_effect = True
+
+        record = aiokafka.structs.ConsumerRecord(
+            topic="topic",
+            partition=0,
+            offset=0,
+            timestamp=time.time() * 1000,
+            timestamp_type=1,
+            key="key",
+            value=json.dumps({"schema": "Foo:1", "data": "bad format"}).encode(),
+            checksum="1",
+            serialized_key_size=10,
+            serialized_value_size=10,
+            headers=[],
+        )
+
+        handler = self.factory(func)
+        with pytest.raises(UnhandledMessage):
+            await handler(record, None)
+
+        assert side_effect is None
 
 
 class TestSubscriptionConsumer:
@@ -132,7 +166,9 @@ class TestSubscriptionConsumer:
         subscription._consumer = MagicMock()
         with patch.object(subscription, "initialize", AsyncMock()), patch.object(
             subscription, "finalize", AsyncMock()
-        ), patch.object(subscription, "_consume", run_mock), patch("kafkaesk.consumer.asyncio.sleep", sleep):
+        ), patch.object(subscription, "_consume", run_mock), patch(
+            "kafkaesk.consumer.asyncio.sleep", sleep
+        ):
             await subscription()
             sleep.assert_called_once()
             assert len(run_mock.mock_calls) == 2
