@@ -46,6 +46,7 @@ async def test_many_consumers_rebalancing(kafka, topic_prefix):
         app = kafkaesk.Application(
             [f"{kafka[0]}:{kafka[1]}"],
             topic_prefix=topic_prefix,
+            kafka_settings={"security_protocol": "PLAINTEXT"},
         )
         app.schema(streams=[TOPIC])(Foo)
         app.id = idx
@@ -99,6 +100,7 @@ async def test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
         app = kafkaesk.Application(
             [f"{kafka[0]}:{kafka[1]}"],
             topic_prefix=topic_prefix,
+            kafka_settings={"security_protocol": "PLAINTEXT"},
         )
         app.schema(streams=[TOPIC])(Foo)
         app.id = idx

@@ -94,6 +94,10 @@ _aiokafka_consumer_settings = (
     "consumer_timeout_ms",
     "max_poll_records",
     "connections_max_idle_ms",
+    "security_protocol",
+    "sasl_mechanism",
+    "sasl_plain_username",
+    "sasl_plain_password",
 )
 _aiokafka_producer_settings = (
     "metadata_max_age_ms",
@@ -102,6 +106,10 @@ _aiokafka_producer_settings = (
     "max_request_size",
     "send_backoff_ms",
     "retry_backoff_ms",
+    "security_protocol",
+    "sasl_mechanism",
+    "sasl_plain_username",
+    "sasl_plain_password",
 )
 
 
@@ -298,6 +306,11 @@ class Application(Router):
                 self._topic_prefix,
                 replication_factor=self._replication_factor,
                 kafka_api_version=self._kafka_api_version,
+                ssl_context=self.kafka_settings.get("ssl_context"),
+                security_protocol=self.kafka_settings.get("security_protocol"),
+                sasl_mechanism=self.kafka_settings.get("sasl_mechanism"),
+                sasl_plain_username=self.kafka_settings.get("sasl_plain_username"),
+                sasl_plain_password=self.kafka_settings.get("sasl_plain_password"),
             )
         return self._topic_mng
 

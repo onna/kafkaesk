@@ -258,7 +258,11 @@ async def test_subscribe_to_topic_that_already_has_messages_for_group(app):
 
 
 async def test_cache_topic_exists_topic_mng(kafka):
-    mng = KafkaTopicManager(bootstrap_servers=[f"{kafka[0]}:{kafka[1]}"], prefix=uuid.uuid4().hex)
+    mng = KafkaTopicManager(
+        bootstrap_servers=[f"{kafka[0]}:{kafka[1]}"],
+        prefix=uuid.uuid4().hex,
+        security_protocol="PLAINTEXT",
+    )
 
     topic_id = mng.get_topic_id("foobar")
     assert not await mng.topic_exists(topic_id)
