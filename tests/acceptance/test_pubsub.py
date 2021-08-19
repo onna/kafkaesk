@@ -261,7 +261,6 @@ async def test_cache_topic_exists_topic_mng(kafka):
     mng = KafkaTopicManager(
         bootstrap_servers=[f"{kafka[0]}:{kafka[1]}"],
         prefix=uuid.uuid4().hex,
-        security_protocol="PLAINTEXT",
     )
 
     topic_id = mng.get_topic_id("foobar")

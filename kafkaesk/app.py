@@ -307,7 +307,7 @@ class Application(Router):
                 replication_factor=self._replication_factor,
                 kafka_api_version=self._kafka_api_version,
                 ssl_context=self.kafka_settings.get("ssl_context"),
-                security_protocol=self.kafka_settings.get("security_protocol"),
+                security_protocol=self.kafka_settings.get("security_protocol", "PLAINTEXT"),
                 sasl_mechanism=self.kafka_settings.get("sasl_mechanism"),
                 sasl_plain_username=self.kafka_settings.get("sasl_plain_username"),
                 sasl_plain_password=self.kafka_settings.get("sasl_plain_password"),

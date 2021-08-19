@@ -24,7 +24,6 @@ async def app(kafka, topic_prefix):
         topic_prefix=topic_prefix,
         kafka_settings={
             "metadata_max_age_ms": 500,
-            "security_protocol": "PLAINTEXT",
         },
     )
 
