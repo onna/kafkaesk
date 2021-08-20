@@ -41,7 +41,7 @@ class KafkaTopicManager:
         else:
             self._kafka_api_version = tuple([int(v) for v in kafka_api_version.split(".")])
         self.ssl_context = ssl_context
-        self.security_protocol = security_protocol
+        self.security_protocol = "SASL_SSL" if security_protocol in "SSL" else security_protocol
         self.sasl_mechanism = sasl_mechanism
         self.sasl_plain_username = sasl_plain_username
         self.sasl_plain_password = sasl_plain_password
@@ -69,7 +69,9 @@ class KafkaTopicManager:
                     bootstrap_servers=self._bootstrap_servers,
                     api_version=self._kafka_api_version,
                     ssl_context=self.ssl_context,
-                    security_protocol=self.security_protocol,
+                    security_protocol="SASL_SSL"
+                    if self.security_protocol in "SSL"
+                    else self.security_protocol,
                     sasl_mechanism=self.sasl_mechanism,
                     sasl_plain_username=self.sasl_plain_username,
                     sasl_plain_password=self.sasl_plain_password,
@@ -91,7 +93,9 @@ class KafkaTopicManager:
                     enable_auto_commit=False,
                     api_version=self._kafka_api_version,
                     ssl_context=self.ssl_context,
-                    security_protocol=self.security_protocol,
+                    security_protocol="SASL_SSL"
+                    if self.security_protocol in "SSL"
+                    else self.security_protocol,
                     sasl_mechanism=self.sasl_mechanism,
                     sasl_plain_username=self.sasl_plain_username,
                     sasl_plain_password=self.sasl_plain_password,
