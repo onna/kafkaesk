@@ -23,7 +23,6 @@ async def _consumer(ob: Foo, record, app):
 
 async def test_run_exits_cleanly_while_consuming(kafka, topic_prefix):
     kserver = f"{kafka[0]}:{kafka[1]}"
-    # kafka_settings = {"security_protocol": "PLAINTEXT"}
     app = Application([kserver], topic_prefix=topic_prefix)
     async with app:
         pro = asyncio.create_task(producer(app, TOPIC))
