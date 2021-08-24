@@ -25,6 +25,11 @@ class KafkaTopicManager:
         prefix: str = "",
         replication_factor: Optional[int] = None,
         kafka_api_version: str = "auto",
+        ssl_context: Optional[Any] = None,
+        security_protocol: Optional[str] = "PLAINTEXT",
+        sasl_mechanism: Optional[str] = "",
+        sasl_plain_username: Optional[str] = "",
+        sasl_plain_password: Optional[str] = "",
     ):
         self.prefix = prefix
         self._bootstrap_servers = bootstrap_servers
@@ -35,6 +40,11 @@ class KafkaTopicManager:
             self._kafka_api_version = None
         else:
             self._kafka_api_version = tuple([int(v) for v in kafka_api_version.split(".")])
+        self.ssl_context = ssl_context
+        self.security_protocol = security_protocol
+        self.sasl_mechanism = sasl_mechanism
+        self.sasl_plain_username = sasl_plain_username
+        self.sasl_plain_password = sasl_plain_password
 
     @property
     def kafka_api_version(self) -> Optional[Tuple[int, ...]]:
@@ -58,6 +68,11 @@ class KafkaTopicManager:
                     kafka.admin.client.KafkaAdminClient,
                     bootstrap_servers=self._bootstrap_servers,
                     api_version=self._kafka_api_version,
+                    ssl_context=self.ssl_context,
+                    security_protocol=self.security_protocol,
+                    sasl_mechanism=self.sasl_mechanism,
+                    sasl_plain_username=self.sasl_plain_username,
+                    sasl_plain_password=self.sasl_plain_password,
                 )
         return self._admin_client
 
@@ -75,6 +90,11 @@ class KafkaTopicManager:
                     bootstrap_servers=self._bootstrap_servers,
                     enable_auto_commit=False,
                     api_version=self._kafka_api_version,
+                    ssl_context=self.ssl_context,
+                    security_protocol=self.security_protocol,
+                    sasl_mechanism=self.sasl_mechanism,
+                    sasl_plain_username=self.sasl_plain_username,
+                    sasl_plain_password=self.sasl_plain_password,
                 )
         if topic in self._topic_cache:
             return True
