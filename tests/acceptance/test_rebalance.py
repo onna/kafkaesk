@@ -99,6 +99,7 @@ async def test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
         app = kafkaesk.Application(
             [f"{kafka[0]}:{kafka[1]}"],
             topic_prefix=topic_prefix,
+            kafka_settings={"auto_commit_interval_ms": 10}
         )
         app.schema(streams=[TOPIC])(Foo)
         app.id = idx
@@ -123,7 +124,6 @@ async def test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
         await apps[idx].stop()
         await asyncio.sleep(1)
         assert consumer_tasks[idx].done()
-
         # start again
         consumer_tasks[idx] = asyncio.create_task(apps[idx].consume_forever())
 
@@ -133,7 +133,7 @@ async def test_consume_every_message_once_during_rebalance(kafka, topic_prefix):
         await apps[idx].stop()
 
     assert len(consumed) > 100
-    # now check that we always consumed a message only once
 
+    # now check that we always consumed a message only once
     for v in consumed.values():
         assert v == 1

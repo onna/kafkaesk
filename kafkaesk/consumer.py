@@ -167,7 +167,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
         self._subscription = subscription
         self._close = None
         self._app = app
-        self._last_commit = 0
+        self._last_commit = 0.0
         self._auto_commit = auto_commit
         self._tp: typing.Dict[aiokafka.TopicPartition, int] = {}
 
@@ -414,8 +414,8 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             logger.warning("Cannot commit because no partitions are assigned!")
             return
 
-        interval = self._app.kafka_settings.get("auto_commit_interval_ms", 2000) / 1000
-        now = time.monotonic_ns()
+        interval = self._app.kafka_settings.get("auto_commit_interval_ms", 5000) / 1000
+        now = time.time()
         if forced or (now > (self._last_commit + interval)):
             try:
                 if self._tp:
