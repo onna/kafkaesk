@@ -316,6 +316,8 @@ async def test_subscription_failure(app):
 
         await app.consume_for(3, seconds=10)
 
+        await app._subscription_consumers[0]._maybe_commit(forced=True)
+
         # make sure we that now committed all messages
         assert (
             sum(
