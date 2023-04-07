@@ -7,3 +7,4 @@
 .python-version
 dist/
 .venv/
+venv/
