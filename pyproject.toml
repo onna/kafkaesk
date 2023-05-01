@@ -23,7 +23,7 @@ orjson = "^3.3.1"
 jsonschema = "^3.2.0"
 prometheus_client = ">= 0.8.0"
 opentracing = "^2.3.0"
-async-timeout = "^3.0.1"
+async-timeout = "4.0.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
