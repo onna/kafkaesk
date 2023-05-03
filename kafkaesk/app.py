@@ -186,12 +186,7 @@ class Router:
         )
 
     def subscribe_to_pattern(
-        self,
-        pattern: str,
-        group: str,
-        *,
-        timeout_seconds: float = None,
-        concurrency: int = None,
+        self, pattern: str, group: str, *, timeout_seconds: float = None, concurrency: int = None,
     ) -> Callable:
         return self._subscribe(
             group=group,
@@ -202,12 +197,7 @@ class Router:
         )
 
     def subscribe(
-        self,
-        stream_id: str,
-        group: str,
-        *,
-        timeout_seconds: float = None,
-        concurrency: int = None,
+        self, stream_id: str, group: str, *, timeout_seconds: float = None, concurrency: int = None,
     ) -> Callable:
         """Keep backwards compatibility"""
         return self._subscribe(
@@ -435,12 +425,7 @@ class Application(Router):
         topic_id = self.topic_mng.get_topic_id(stream_id)
         start_time = time.time()
         with watch_publish(topic_id):
-            fut = await producer.send(
-                topic_id,
-                value=data,
-                key=key,
-                headers=headers,
-            )
+            fut = await producer.send(topic_id, value=data, key=key, headers=headers,)
 
         fut.add_done_callback(partial(published_callback, topic_id, start_time))  # type: ignore
         return fut
@@ -586,9 +571,7 @@ class Application(Router):
 
         for subscription in self._subscriptions:
             consumer = BatchConsumer(
-                subscription=subscription,
-                app=self,
-                auto_commit=self.auto_commit,
+                subscription=subscription, app=self, auto_commit=self.auto_commit,
             )
             self._subscription_consumers.append(consumer)
 
@@ -605,7 +588,8 @@ class Application(Router):
                 return
 
             _, pending = await asyncio.wait(
-                [c.stop() for c in self._subscription_consumers if c], timeout=5
+                [asyncio.create_task(c.stop()) for c in self._subscription_consumers if c],
+                timeout=5,
             )
             for task in pending:
                 # stop tasks that didn't finish

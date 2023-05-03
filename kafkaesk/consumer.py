@@ -205,9 +205,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             await self.finalize()
 
     def _health_metric(self, healthy: bool) -> None:
-        CONSUMER_HEALTH.labels(
-            group_id=self.group_id,
-        ).set(healthy)
+        CONSUMER_HEALTH.labels(group_id=self.group_id,).set(healthy)
 
     async def emit(self, name: str, *args: typing.Any, **kwargs: typing.Any) -> None:
         for func in self._event_handlers.get(name, []):
@@ -315,12 +313,12 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
         # TODO: this metric is kept for backwards-compatibility, but should be revisited
         with CONSUMED_MESSAGE_TIME.labels(
-            stream_id=self.stream_id,
-            partition=next(iter(batch)),
-            group_id=self.group_id,
+            stream_id=self.stream_id, partition=next(iter(batch)), group_id=self.group_id,
         ).time():
             done, pending = await asyncio.wait(
-                futures.keys(), timeout=self._timeout, return_when=asyncio.FIRST_EXCEPTION
+                futures.keys(),
+                timeout=self._timeout,
+                return_when=asyncio.FIRST_EXCEPTION,
             )
 
         # Look for failures
@@ -369,23 +367,17 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
         for tp, records in batch.items():
             CONSUMED_MESSAGES_BATCH_SIZE.labels(
-                stream_id=tp.topic,
-                group_id=self.group_id,
-                partition=tp.partition,
+                stream_id=tp.topic, group_id=self.group_id, partition=tp.partition,
             ).observe(len(records))
 
             for record in sorted(records, key=lambda rec: rec.offset):
                 lead_time = time.time() - record.timestamp / 1000  # type: ignore
                 MESSAGE_LEAD_TIME.labels(
-                    stream_id=record.topic,
-                    group_id=self.group_id,
-                    partition=record.partition,
+                    stream_id=record.topic, group_id=self.group_id, partition=record.partition,
                 ).observe(lead_time)
 
                 CONSUMER_TOPIC_OFFSET.labels(
-                    stream_id=record.topic,
-                    group_id=self.group_id,
-                    partition=record.partition,
+                    stream_id=record.topic, group_id=self.group_id, partition=record.partition,
                 ).set(record.offset)
 
         # Commit first and then call the event subscribers
@@ -396,10 +388,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
     def _count_message(self, record: aiokafka.ConsumerRecord, error: str = NOERROR) -> None:
         CONSUMED_MESSAGES.labels(
-            stream_id=record.topic,
-            error=error,
-            partition=record.partition,
-            group_id=self.group_id,
+            stream_id=record.topic, error=error, partition=record.partition, group_id=self.group_id,
         ).inc()
 
     @property
@@ -464,9 +453,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
                     # Remove the partition from the dict
                     self._tp.pop(tp, None)
                     CONSUMER_REBALANCED.labels(
-                        partition=tp.partition,
-                        group_id=self.group_id,
-                        event="revoked",
+                        partition=tp.partition, group_id=self.group_id, event="revoked",
                     ).inc()
             logger.info(f"Partitions revoked to {self}: {revoked}")
 
@@ -479,9 +466,7 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             self._tp[tp] = position
 
             CONSUMER_REBALANCED.labels(
-                partition=tp.partition,
-                group_id=self.group_id,
-                event="assigned",
+                partition=tp.partition, group_id=self.group_id, event="assigned",
             ).inc()
 
     async def on_handler_timeout(self, record: aiokafka.ConsumerRecord) -> None:
