@@ -11,11 +11,15 @@ NOERROR = "none"
 ERROR_GENERAL_EXCEPTION = "exception"
 
 KAFKA_ACTION = client.Counter(
-    "kafkaesk_kafka_action", "Perform action on kafka", ["type", "error"],
+    "kafkaesk_kafka_action",
+    "Perform action on kafka",
+    ["type", "error"],
 )
 
 KAFKA_ACTION_TIME = client.Histogram(
-    "kafkaesk_kafka_action_time", "Time taken to perform kafka action", ["type"],
+    "kafkaesk_kafka_action_time",
+    "Time taken to perform kafka action",
+    ["type"],
 )
 
 PUBLISH_MESSAGES = client.Counter(
@@ -82,7 +86,9 @@ MESSAGE_LEAD_TIME = client.Histogram(
 )
 
 CONSUMER_REBALANCED = client.Counter(
-    "kafkaesk_consumer_rebalanced", "Consumer rebalances", ["group_id", "partition", "event"],
+    "kafkaesk_consumer_rebalanced",
+    "Consumer rebalances",
+    ["group_id", "partition", "event"],
 )
 
 CONSUMER_HEALTH = client.Gauge(
