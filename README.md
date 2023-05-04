@@ -158,12 +158,12 @@ async def get_messages(data: ContentMessage, subscriber):
 ```
 
 ## SSL
-Add these values to your `kafak_settings`:
-    `ssl_context` - this should be a placeholder as the SSL Context is generally created within the application
-    `security_protocol` - one of SSL or PLAINTEXT
-    `sasl_mechanism` - one of PLAIN, GSSAPI, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER
-    `sasl_plain_username`
-    `sasl_plain_password`
+Add these values to your `kafak_settings`:  
+    `ssl_context` - this should be a placeholder as the SSL Context is generally created within the application  
+    `security_protocol` - one of SSL or PLAINTEXT  
+    `sasl_mechanism` - one of PLAIN, GSSAPI, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER  
+    `sasl_plain_username`  
+    `sasl_plain_password`  
 
 ## kafkaesk contract
 
