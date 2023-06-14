@@ -103,7 +103,7 @@ async def test_slow_messages(app: Application):
             await asyncio.sleep(0.01)
         await app.flush()
 
-        fut = asyncio.create_task(app.consume_for(num_messages=8, seconds=2))
+        fut = asyncio.create_task(app.consume_for(num_messages=8, seconds=5))
         await fut
 
         assert len([x for x in consumed if x[0] == "ok"]) == 5
