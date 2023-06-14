@@ -24,6 +24,7 @@ jsonschema = "^4.17.3"
 prometheus_client = ">=0.17.0"
 opentracing = "^2.4.0"
 async-timeout = ">=4.0.2"
+pytest-asyncio = "^0.21.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.3.2"
