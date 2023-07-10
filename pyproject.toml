@@ -16,7 +16,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8.1"
-aiokafka = "^0.8.1"
+aiokafka = ">=0.7.1"
 kafka-python = "^2.0.2"
 pydantic = "^1.10.9"
 orjson = "^3.9.1"
@@ -27,10 +27,10 @@ async-timeout = ">=4.0.2"
 pytest-asyncio = "^0.21.0"
 
 [tool.poetry.dev-dependencies]
-pytest = "^7.3.2"
+pytest = "^7.4.0"
 pytest-docker-fixtures = "^1.3.17"
 pytest-asyncio = "^0.21.0"
-mypy = "0.770"
+mypy = "1.0.0"
 flake8 = "^6.0.0"
 isort = "^5.12.0"
 black = "^23.3.0"
