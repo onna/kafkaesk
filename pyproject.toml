@@ -22,7 +22,7 @@ pydantic = "^1.10.9"
 orjson = "^3.9.1"
 jsonschema = ">=3.2.0"
 prometheus_client = ">=0.17.0"
-opentracing = "^2.4.0"
+opentracing = ">=2.3.0"
 async-timeout = ">=4.0.2"
 pytest-asyncio = "^0.21.0"
 
