@@ -320,7 +320,9 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             group_id=self.group_id,
         ).time():
             done, pending = await asyncio.wait(
-                futures.keys(), timeout=self._timeout, return_when=asyncio.FIRST_EXCEPTION
+                futures.keys(),
+                timeout=self._timeout,
+                return_when=asyncio.FIRST_EXCEPTION,
             )
 
         # Look for failures

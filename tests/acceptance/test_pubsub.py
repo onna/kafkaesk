@@ -287,8 +287,8 @@ async def test_subscription_failure(app):
         raise Exception("Unhandled Exception")
 
     async with app:
-        await app.publish(stream_id, Foo(bar=1))
-        await app.publish(stream_id, Foo(bar=1))
+        await app.publish(stream_id, Foo(bar="1"))
+        await app.publish(stream_id, Foo(bar="1"))
         await app.flush()
 
         # it fails
@@ -311,7 +311,7 @@ async def test_subscription_failure(app):
         probe("ok", data)
 
     async with app:
-        await app.publish(stream_id, Foo(bar=2))
+        await app.publish(stream_id, Foo(bar="2"))
         await app.flush()
 
         await app.consume_for(3, seconds=10)
@@ -351,8 +351,8 @@ async def test_publish_unregistered_schema(app):
         probe(data)
 
     async with app:
-        await app.publish(stream_id, Foo(bar=1))
-        await app.publish(stream_id, Foo(bar=2))
+        await app.publish(stream_id, Foo(bar="1"))
+        await app.publish(stream_id, Foo(bar="2"))
         await app.flush()
 
         await app.consume_for(2, seconds=5)

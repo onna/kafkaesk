@@ -107,7 +107,7 @@ class KafkaeskQueue:
 
         while True:
             try:
-                stream, log_data = await asyncio.wait_for(self._queue.get(), 1)
+                stream, log_data = await asyncio.wait_for(asyncio.create_task(self._queue.get()), 1)
                 await self._publish(stream, log_data)
 
             except asyncio.TimeoutError:

@@ -605,7 +605,8 @@ class Application(Router):
                 return
 
             _, pending = await asyncio.wait(
-                [c.stop() for c in self._subscription_consumers if c], timeout=5
+                [asyncio.create_task(c.stop()) for c in self._subscription_consumers if c],
+                timeout=5,
             )
             for task in pending:
                 # stop tasks that didn't finish

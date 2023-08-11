@@ -1,5 +1,5 @@
 .vscode/
-
+.idea/
 # Python Stuff
 **/__pycache__
 *.egg-info
@@ -7,3 +7,4 @@
 .python-version
 dist/
 .venv/
+venv/
