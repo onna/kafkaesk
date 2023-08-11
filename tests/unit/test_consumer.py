@@ -16,14 +16,13 @@ import asyncio
 import opentracing
 import pydantic
 import pytest
-import pytest_asyncio
 import time
 import json
 
 pytestmark = pytest.mark.asyncio
 
 
-@pytest_asyncio.fixture()
+@pytest.fixture()
 def subscription_conf():
     subscription = Subscription(
         "foo",
@@ -35,7 +34,7 @@ def subscription_conf():
     yield subscription
 
 
-@pytest_asyncio.fixture()
+@pytest.fixture()
 def subscription(subscription_conf):
     yield BatchConsumer(
         subscription=subscription_conf,

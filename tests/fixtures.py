@@ -3,21 +3,21 @@ from unittest.mock import patch
 
 import kafkaesk
 import os
-import pytest_asyncio
+import pytest
 import uuid
 
 
-@pytest_asyncio.fixture()
+@pytest.fixture()
 async def kafka():
     yield os.environ.get("KAFKA", "localhost:9092").split(":")
 
 
-@pytest_asyncio.fixture()
+@pytest.fixture()
 def topic_prefix():
     return uuid.uuid4().hex
 
 
-@pytest_asyncio.fixture()
+@pytest.fixture()
 async def app(kafka, topic_prefix):
     yield kafkaesk.Application(
         [f"{kafka[0]}:{kafka[1]}"],
@@ -28,7 +28,7 @@ async def app(kafka, topic_prefix):
     )
 
 
-@pytest_asyncio.fixture()
+@pytest.fixture()
 def metrics():
     with patch.multiple(
         "kafkaesk.app",

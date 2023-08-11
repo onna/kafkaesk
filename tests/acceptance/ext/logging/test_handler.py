@@ -13,14 +13,13 @@ import kafkaesk
 import logging
 import pydantic
 import pytest
-import pytest_asyncio
 import time
 import uuid
 
 pytestmark = pytest.mark.asyncio
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest.fixture(scope="function")
 def logger():
     ll = logging.getLogger("test")
     ll.propagate = False
@@ -29,7 +28,7 @@ def logger():
     return ll
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest.fixture(scope="function")
 def stream_handler(logger):
 
     stream = io.StringIO()
@@ -39,7 +38,7 @@ def stream_handler(logger):
     return stream
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest.fixture(scope="function")
 def kafakesk_handler(app, logger):
     handler = PydanticKafkaeskHandler(app, "log.test")
     logger.addHandler(handler)
@@ -63,7 +62,7 @@ async def test_handler_initializes_applogger(kafka, logger):
     assert app._initialized
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest.fixture(scope="function")
 def log_consumer(app):
     consumed = []
 
@@ -182,7 +181,7 @@ class TestPydanticKafkaeskHandler:
 
 
 class TestKafkaeskQueue:
-    @pytest_asyncio.fixture(scope="function")
+    @pytest.fixture(scope="function")
     async def queue(self, request, app):
 
         max_queue = 10000
