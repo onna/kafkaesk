@@ -29,7 +29,7 @@ async def test_factory_return_type() -> None:
 async def test_factory_adds_pydantic_models() -> None:
     class LogModel(pydantic.BaseModel):
         _is_log_model = True
-        foo: Optional[str]
+        foo: Optional[str] = None
 
     record = factory(
         name="logger.test",
@@ -66,7 +66,7 @@ async def test_factory_formats_msg() -> None:
 async def test_factory_formats_msg_and_adds_pydantic_model() -> None:
     class LogModel(pydantic.BaseModel):
         _is_log_model = True
-        foo: Optional[str]
+        foo: Optional[str] = None
 
     record = factory(
         name="logger.test",

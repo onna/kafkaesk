@@ -20,8 +20,8 @@ class PydanticLogRecord(logging.LogRecord):
         exc_info: Union[
             Tuple[type, BaseException, Optional[TracebackType]], Tuple[None, None, None], None
         ],
-        func: Optional[str],
-        sinfo: Optional[str],
+        func: Optional[str] = None,
+        sinfo: Optional[str] = None,
         pydantic_data: Optional[List[pydantic.BaseModel]] = None,
     ):
         super().__init__(name, level, fn, lno, msg, args, exc_info, func, sinfo)
@@ -41,8 +41,8 @@ def factory(
     exc_info: Union[
         Tuple[type, BaseException, Optional[TracebackType]], Tuple[None, None, None], None
     ],
-    func: Optional[str],
-    sinfo: Optional[str],
+    func: Optional[str] = None,
+    sinfo: Optional[str] = None,
 ) -> PydanticLogRecord:
     pydantic_data: List[pydantic.BaseModel] = []
 

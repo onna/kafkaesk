@@ -251,7 +251,7 @@ class Application(Router):
     Application configuration
     """
 
-    _producer: Optional[aiokafka.AIOKafkaProducer]
+    _producer: Optional[aiokafka.AIOKafkaProducer] = None
 
     def __init__(
         self,
@@ -535,9 +535,9 @@ class Application(Router):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        exc_type: Optional[Type[BaseException]] = None,
+        exc: Optional[BaseException] = None,
+        traceback: Optional[TracebackType] = None,
     ) -> None:
         logger.info("Stopping application...", exc_info=exc)
         await self.finalize()

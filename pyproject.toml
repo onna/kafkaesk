@@ -1,12 +1,13 @@
 [tool.poetry]
 name = "kafkaesk"
-version = "0.8.4"
+version = "0.8.5"
 description = "Easy publish and subscribe to events with python and Kafka."
 authors = ["vangheem <vangheem@gmail.com>", "pfreixes <pfreixes@gmail.com>"]
 classifiers = [
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Framework :: AsyncIO",
     "License :: OSI Approved :: BSD License",
     "Topic :: System :: Distributed Computing"

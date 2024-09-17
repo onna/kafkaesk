@@ -143,7 +143,7 @@ def build_handler(
 
 class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     _subscription: Subscription
-    _close: typing.Optional[asyncio.Future]
+    _close: typing.Optional[asyncio.Future] = None
     _consumer: aiokafka.AIOKafkaConsumer
     _offsets: typing.Dict[aiokafka.TopicPartition, int]
     _message_handler: typing.Callable

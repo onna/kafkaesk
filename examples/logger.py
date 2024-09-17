@@ -11,7 +11,7 @@ import logging
 
 class UserLog(BaseModel):
     _is_log_model = True
-    user: Optional[str]
+    user: Optional[str] = None
 
 
 async def test_log() -> None:

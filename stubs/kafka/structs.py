@@ -9,7 +9,7 @@ class ConsumerRecord:
     topic: str
     value: bytes
     key: bytes
-    headers: Optional[List[Tuple[str, bytes]]]
+    headers: Optional[List[Tuple[str, bytes]]] = None
 
 
 class TopicPartition:

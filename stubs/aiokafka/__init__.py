@@ -79,13 +79,13 @@ class AIOKafkaConsumer:
     _client: AIOKafkaClient
     _coordinator: GroupCoordinator
     _subscription: Subscription
-    _group_id: Optional[str]
+    _group_id: Optional[str] = None
 
     def __init__(
         self,
         bootstrap_servers: List[str],
         loop: AbstractEventLoop,
-        group_id: Optional[str],
+        group_id: Optional[str] = None,
         api_version: str = "auto",
         **kwargs: Any,
     ):
@@ -95,7 +95,10 @@ class AIOKafkaConsumer:
         ...
 
     async def subscribe(
-            self, topics: Optional[List[str]] = None, pattern: Optional[str] = None, listener: Optional["ConsumerRebalanceListener"] = None
+        self,
+        topics: Optional[List[str]] = None,
+        pattern: Optional[str] = None,
+        listener: Optional["ConsumerRebalanceListener"] = None,
     ) -> None:
         ...
 
