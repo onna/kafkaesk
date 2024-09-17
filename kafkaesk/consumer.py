@@ -62,7 +62,7 @@ def _pydantic_msg_handler(
 ) -> pydantic.BaseModel:
     try:
         data: typing.Dict[str, typing.Any] = orjson.loads(record.value)
-        return model.model_construct(**data["data"])
+        return model.parse_obj(data["data"])
     except orjson.JSONDecodeError:
         # log the execption so we can see what fields failed
         logger.warning(f"Payload is not valid json: {record}", exc_info=True)
