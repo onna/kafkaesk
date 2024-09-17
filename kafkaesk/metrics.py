@@ -115,9 +115,9 @@ class watch:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[Exception]],
-        exc_value: Optional[Exception],
-        exc_traceback: Optional[traceback.StackSummary],
+        exc_type: Optional[Type[Exception]] = None,
+        exc_value: Optional[Exception] = None,
+        exc_traceback: Optional[traceback.StackSummary] = None,
     ) -> None:
         error = NOERROR
         if self.histogram is not None:

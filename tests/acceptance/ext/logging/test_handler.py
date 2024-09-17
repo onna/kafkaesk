@@ -31,7 +31,6 @@ def logger():
 
 @pytest_asyncio.fixture(scope="function")
 def stream_handler(logger):
-
     stream = io.StringIO()
     handler = PydanticStreamHandler(stream=stream)
     logger.addHandler(handler)
@@ -76,7 +75,6 @@ def log_consumer(app):
 
 class TestPydanticStreamHandler:
     async def test_stream_handler(self, stream_handler, logger):
-
         logger.info("Test Message %s", "extra")
 
         message = stream_handler.getvalue()
@@ -86,7 +84,7 @@ class TestPydanticStreamHandler:
     async def test_stream_handler_with_log_model(self, stream_handler, logger):
         class LogModel(pydantic.BaseModel):
             _is_log_model = True
-            foo: Optional[str]
+            foo: Optional[str] = None
 
         logger.info("Test Message %s", "extra", LogModel(foo="bar"))
 
@@ -112,7 +110,6 @@ class TestPydanticStreamHandler:
 
 class TestPydanticKafkaeskHandler:
     async def test_kafka_handler(self, app, kafakesk_handler, logger, log_consumer):
-
         async with app:
             logger.info("Test Message %s", "extra")
             await app.flush()
@@ -124,7 +121,7 @@ class TestPydanticKafkaeskHandler:
     async def test_kafka_handler_with_log_model(self, app, kafakesk_handler, logger, log_consumer):
         class LogModel(pydantic.BaseModel):
             _is_log_model = True
-            foo: Optional[str]
+            foo: Optional[str] = None
 
         async with app:
             logger.info("Test Message %s", "extra", LogModel(foo="bar"))
@@ -184,7 +181,6 @@ class TestPydanticKafkaeskHandler:
 class TestKafkaeskQueue:
     @pytest_asyncio.fixture(scope="function")
     async def queue(self, request, app):
-
         max_queue = 10000
         for marker in request.node.iter_markers("with_max_queue"):
             max_queue = marker.args[0]
@@ -214,7 +210,6 @@ class TestKafkaeskQueue:
         assert len(consumed) == 1
 
     async def test_queue_flush(self, app, queue, log_consumer):
-
         async with app:
             queue.start()
             for i in range(10):
@@ -228,7 +223,6 @@ class TestKafkaeskQueue:
         assert len(log_consumer) == 10
 
     async def test_queue_flush_on_close(self, app, queue, log_consumer):
-
         async with app:
             queue.start()
             await asyncio.sleep(0.1)
@@ -245,7 +239,6 @@ class TestKafkaeskQueue:
 
     @pytest.mark.with_max_queue(1)
     async def test_queue_max_size(self, app, queue):
-
         queue.start()
         queue.put_nowait("log.test", PydanticLogModel())
 

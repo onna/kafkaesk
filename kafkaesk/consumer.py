@@ -42,7 +42,7 @@ class Subscription:
         *,
         pattern: typing.Optional[str] = None,
         topics: typing.Optional[typing.List[str]] = None,
-        timeout_seconds: float = None,
+        timeout_seconds: float = 0.0,
         concurrency: int = None,
     ):
         self.consumer_id = consumer_id
@@ -143,7 +143,7 @@ def build_handler(
 
 class BatchConsumer(aiokafka.ConsumerRebalanceListener):
     _subscription: Subscription
-    _close: typing.Optional[asyncio.Future]
+    _close: typing.Optional[asyncio.Future] = None
     _consumer: aiokafka.AIOKafkaConsumer
     _offsets: typing.Dict[aiokafka.TopicPartition, int]
     _message_handler: typing.Callable
@@ -252,12 +252,12 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
 
             if "*" in self.pattern:
                 pattern = fnmatch.translate(topic_id)
-                consumer.subscribe(pattern=pattern, listener=self)
+                consumer.subscribe(pattern=pattern, listener=self)  # type: ignore
             else:
-                consumer.subscribe(topics=[topic_id], listener=self)
+                consumer.subscribe(topics=[topic_id], listener=self)  # type: ignore
         elif self.topics:
             topics = [self._app.topic_mng.get_topic_id(topic) for topic in self.topics]
-            consumer.subscribe(topics=topics, listener=self)
+            consumer.subscribe(topics=topics, listener=self)  # type: ignore
         else:
             raise ValueError("Either `topics` or `pattern` should be defined")
 

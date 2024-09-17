@@ -15,9 +15,9 @@ import kafka.structs
 
 
 class KafkaTopicManager:
-    _admin_client: Optional[kafka.admin.client.KafkaAdminClient]
-    _client: Optional[kafka.KafkaClient]
-    _kafka_api_version: Optional[Tuple[int, ...]]
+    _admin_client: Optional[kafka.admin.client.KafkaAdminClient] = None
+    _client: Optional[kafka.KafkaClient] = None
+    _kafka_api_version: Optional[Tuple[int, ...]] = None
 
     def __init__(
         self,
