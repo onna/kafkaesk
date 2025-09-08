@@ -377,7 +377,10 @@ class BatchConsumer(aiokafka.ConsumerRebalanceListener):
             ).observe(len(records))
 
             for record in sorted(records, key=lambda rec: rec.offset):
-                lead_time = time.time() - record.timestamp / 1000  # type: ignore
+                if record.timestamp:
+                    lead_time = time.time() - record.timestamp / 1000  # type: ignore
+                else:
+                    lead_time = 0
                 MESSAGE_LEAD_TIME.labels(
                     stream_id=record.topic,
                     group_id=self.group_id,
