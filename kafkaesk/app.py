@@ -39,6 +39,10 @@ import pydantic
 import signal
 import time
 
+from packaging.version import Version
+
+_AIOKAFKA_SUPPORTS_API_VERSION = Version(aiokafka.__version__) < Version("0.13.0")
+
 logger = logging.getLogger("kafkaesk")
 
 
@@ -464,14 +468,17 @@ class Application(Router):
             return not self._producer._sender.sender_task.done()
         return True
 
+    def _api_version(self) -> Dict[str, Any]:
+        return {"api_version": self._kafka_api_version} if _AIOKAFKA_SUPPORTS_API_VERSION else {}
+
     def consumer_factory(self, group_id: str) -> aiokafka.AIOKafkaConsumer:
         return aiokafka.AIOKafkaConsumer(
             bootstrap_servers=cast(List[str], self._kafka_servers),
             loop=asyncio.get_event_loop(),
             group_id=group_id,
             auto_offset_reset="earliest",
-            api_version=self._kafka_api_version,
             enable_auto_commit=False,
+            **self._api_version(),
             **{k: v for k, v in self.kafka_settings.items() if k in _aiokafka_consumer_settings},
         )
 
@@ -479,7 +486,7 @@ class Application(Router):
         return aiokafka.AIOKafkaProducer(
             bootstrap_servers=cast(List[str], self._kafka_servers),
             loop=asyncio.get_event_loop(),
-            api_version=self._kafka_api_version,
+            **self._api_version(),
             **{k: v for k, v in self.kafka_settings.items() if k in _aiokafka_producer_settings},
         )
 
